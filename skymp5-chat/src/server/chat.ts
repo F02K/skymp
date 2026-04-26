@@ -55,10 +55,16 @@ const RATE_LIMIT_MS  = 1000
 // new ChatMsg into window.chatMessages, then refreshes the widgets array so
 // the React chat component re-renders.
 
+// updateOwner fires on every game tick (not just on property change), so we
+// use ctx.state to guard against re-delivering the same value each frame.
+// When the property is reset to '' (the clear-before-send pattern in deliver()),
+// we wipe the guard so the same payload can be shown again if re-sent.
 const UPDATE_OWNER_JS = `
 (function(){
   var rawMsg=String(ctx.value||"");
-  if(!rawMsg)return;
+  if(!rawMsg){ctx.state._chatLastMsg="";return;}
+  if(ctx.state._chatLastMsg===rawMsg)return;
+  ctx.state._chatLastMsg=rawMsg;
   var safeMsg=JSON.stringify(rawMsg);
   ctx.sp.browser.executeJavaScript(
     "(function(){"+
