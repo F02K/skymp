@@ -71,11 +71,6 @@
   }
 
   function sendBrowserMessage(payload) {
-    if (payload && typeof payload === 'object' && window.skymp && typeof window.skymp.send === 'function') {
-      window.skymp.send(payload);
-      return true;
-    }
-
     if (
       payload &&
       typeof payload === 'object' &&
@@ -102,12 +97,12 @@
   function ensureCompatGlobals() {
     window.skyrimPlatform = window.skyrimPlatform || {};
     window.skyrimPlatform.widgets = window.skyrimPlatform.widgets || createWidgetStore();
-    window.skyrimPlatform.sendMessage = window.skyrimPlatform.sendMessage || function (payload) {
+    window.skyrimPlatform.sendMessage = window.skyrimPlatform.sendMessage || function (type, data) {
       if (window.skymp && typeof window.skymp.send === 'function') {
-        window.skymp.send(payload);
+        window.skymp.send({ type: type, data: data });
         return true;
       }
-      console.error('[skymp5-chat] window.skyrimPlatform.sendMessage is not available', payload);
+      console.error('[skymp5-chat] window.skyrimPlatform.sendMessage is not available', type, data);
       return false;
     };
     window.chatMessages = window.chatMessages || [];
@@ -320,12 +315,15 @@
   }
 
   function sendToServer(text, options) {
-    if (window.mp && typeof window.mp.send === 'function') {
-      window.mp.send('cef::chat:send', text);
-      return true;
+    if (window.skyrimPlatform && typeof window.skyrimPlatform.sendMessage === 'function') {
+      return window.skyrimPlatform.sendMessage('cef::chat:send', text) !== false;
     }
 
-    console.error('[skymp5-chat] window.mp.send is not available');
+    if (window.mp && typeof window.mp.send === 'function') {
+      return window.mp.send('cef::chat:send', text) !== false;
+    }
+
+    console.error('[skymp5-chat] browser message bridge is not available');
     if (!options || !options.silent) {
       addMessage('#{ff9933}[Chat] #{ffffff}Not connected to the SkyMP browser bridge.');
     }

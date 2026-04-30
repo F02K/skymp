@@ -75,6 +75,16 @@ export function getPlayerMemberships(mp: Mp, store: Store, playerId: number): Fa
   return _getMemberships(mp, player.actorId)
 }
 
+export function refreshBackendMemberships(mp: Mp, store: Store, playerId: number, accessPayload: any): FactionMembership[] {
+  const player = store.get(playerId)
+  if (!player) return []
+  safeSet(mp, player.actorId, 'private.frostfallAccess', accessPayload || { permissions: [], gameFactions: [], factions: [] })
+  const memberships = _syncBackendMemberships(mp, player.actorId)
+  store.update(playerId, { factions: memberships.map(m => m.factionId) })
+  safeSendCustomPacket(mp, player.actorId, 'factionsSync', { memberships })
+  return memberships
+}
+
 // ── Internal ──────────────────────────────────────────────────────────────────
 
 function _getMemberships(mp: Mp, actorId: number): FactionMembership[] {
@@ -101,10 +111,42 @@ export function init(mp: Mp, store: Store, bus: Bus): void {
 export function onConnect(mp: Mp, store: Store, bus: Bus, userId: number): void {
   const player = store.get(userId)
   if (!player || !player.actorId) return
-  const memberships = _getMemberships(mp, player.actorId)
+  const memberships = _syncBackendMemberships(mp, player.actorId)
   const factionIds  = memberships.map(m => m.factionId)
   store.update(userId, { factions: factionIds })
   // 3-arg sendCustomPacket is an undeclared native extension — guard so a missing
   // implementation doesn't abort the rest of the onConnect chain.
   safeSendCustomPacket(mp, player.actorId, 'factionsSync', { memberships })
+}
+
+function _syncBackendMemberships(mp: Mp, actorId: number): FactionMembership[] {
+  const current = _getMemberships(mp, actorId)
+  const access = safeGet<any>(mp, actorId, 'private.frostfallAccess', null)
+  const backendFactions = Array.isArray(access?.gameFactions) ? access.gameFactions : []
+
+  if (!backendFactions.length) {
+    const localOnly = current.filter(m => m.source !== 'backend')
+    if (localOnly.length !== current.length) _saveMemberships(mp, actorId, localOnly)
+    return localOnly
+  }
+
+  const now = Date.now()
+  const backend = backendFactions
+    .filter((item: any) => typeof item?.factionId === 'string' && item.factionId)
+    .map((item: any) => ({
+      factionId: item.factionId,
+      rank: Number.isFinite(Number(item.rank)) ? Number(item.rank) : 0,
+      joinedAt: now,
+      source: 'backend' as const,
+      title: typeof item.title === 'string' ? item.title : undefined,
+      permission: typeof item.permission === 'string' ? item.permission : undefined,
+      scope: typeof item.scope === 'string' ? item.scope : undefined,
+      group: typeof item.group === 'string' ? item.group : undefined,
+    }))
+
+  const backendIds = new Set(backend.map((m: FactionMembership) => m.factionId))
+  const local = current.filter(m => m.source !== 'backend' && !backendIds.has(m.factionId))
+  const next = [...local, ...backend]
+  _saveMemberships(mp, actorId, next)
+  return next
 }

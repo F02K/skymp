@@ -15,9 +15,28 @@ type Mp = any; // TODO
 interface UserProfile {
   id: number;
   discordId: string | null;
+  roles?: string[];
+  permissions?: string[];
+  gameFactions?: BackendFactionMembership[];
+  factions?: unknown[];
 }
 
-type MasterApiAccessError = "serverLocked" | "notWhitelisted" | "sessionNotFound" | "profileNotFound" | "unknown";
+interface BackendFactionMembership {
+  factionId: string;
+  rank: number;
+  title?: string;
+  permission?: string;
+  scope?: string;
+  group?: string;
+}
+
+interface BackendAccessPayload {
+  permissions: string[];
+  gameFactions: BackendFactionMembership[];
+  factions: unknown[];
+}
+
+type MasterApiAccessError = "banned" | "serverLocked" | "notWhitelisted" | "sessionNotFound" | "profileNotFound" | "unknown";
 
 namespace DiscordErrors {
   export const unknownMember = 10007;
@@ -72,10 +91,10 @@ export class Login implements System {
     return data.user as UserProfile;
   }
 
-  private async checkProfileAllowed(profileId: number, userId: number, ctx: SystemContext): Promise<void> {
+  private async checkProfileAllowed(profileId: number, userId: number, ctx: SystemContext): Promise<BackendAccessPayload> {
     if (!this.masterUrl || !this.masterKey) {
       this.log("Skipping offline profile whitelist check because masterUrl or masterKey is not configured");
-      return;
+      return { permissions: [], gameFactions: [], factions: [] };
     }
 
     const response = await this.fetchRetry(
@@ -87,12 +106,22 @@ export class Login implements System {
       await this.sendMasterApiLoginFailure(ctx, userId, response);
       throw new Error(`checkProfileAllowed: HTTP error ${response.status}`);
     }
+
+    const data = await response.json();
+    return {
+      permissions: Array.isArray(data?.permissions) ? data.permissions : [],
+      gameFactions: Array.isArray(data?.gameFactions) ? data.gameFactions : [],
+      factions: Array.isArray(data?.factions) ? data.factions : [],
+    };
   }
 
   private async sendMasterApiLoginFailure(ctx: SystemContext, userId: number, response: Response): Promise<void> {
     const reason = await this.getMasterApiAccessError(response);
 
     switch (reason) {
+      case "banned":
+        ctx.svr.sendCustomPacket(userId, loginFailedBanned);
+        return;
       case "serverLocked":
         ctx.svr.sendCustomPacket(userId, loginFailedServerLocked);
         return;
@@ -115,7 +144,7 @@ export class Login implements System {
   private async getMasterApiAccessError(response: Response): Promise<MasterApiAccessError> {
     try {
       const data = await response.clone().json() as { error?: unknown };
-      if (data.error === "serverLocked" || data.error === "notWhitelisted" ||
+      if (data.error === "banned" || data.error === "serverLocked" || data.error === "notWhitelisted" ||
         data.error === "profileNotFound") {
         return data.error;
       }
@@ -184,7 +213,7 @@ export class Login implements System {
           console.error("discordAuth.guildId is missing, skipping Discord server integration");
         }
 
-        let roles = new Array<string>();
+        let roles = Array.isArray(profile.roles) ? profile.roles : new Array<string>();
 
         if (discordAuth && profile.discordId) {
           const guidBeforeAsyncOp = ctx.svr.getUserGuid(userId);
@@ -215,7 +244,7 @@ export class Login implements System {
 
           const receivedRoles: string[] | null = (responseData && Array.isArray(responseData.roles)) ? responseData.roles : null;
           const currentRoles: string[] | null = actorId ? mp.get(actorId, "private.discordRoles") : null;
-          roles = receivedRoles || currentRoles || [];
+          roles = receivedRoles || currentRoles || roles || [];
 
           console.log('Discord request:', JSON.stringify({ status: response.status, data: responseData }));
 
@@ -274,7 +303,11 @@ export class Login implements System {
           });
         }
 
-        this.emit(ctx, "spawnAllowed", userId, profile.id, roles, profile.discordId);
+        this.emit(ctx, "spawnAllowed", userId, profile.id, roles, profile.discordId, {
+          permissions: Array.isArray(profile.permissions) ? profile.permissions : [],
+          gameFactions: Array.isArray(profile.gameFactions) ? profile.gameFactions : [],
+          factions: Array.isArray(profile.factions) ? profile.factions : [],
+        });
         loginsCounter.inc();
         this.log("Logged as " + profile.id);
       })()
@@ -285,8 +318,8 @@ export class Login implements System {
     } else if (this.offlineMode === true && gameData && typeof gameData.profileId === "number") {
       const profileId = gameData.profileId;
       (async () => {
-        await this.checkProfileAllowed(profileId, userId, ctx);
-        this.emit(ctx, "spawnAllowed", userId, profileId, [], undefined);
+        const access = await this.checkProfileAllowed(profileId, userId, ctx);
+        this.emit(ctx, "spawnAllowed", userId, profileId, [], undefined, access);
         loginsCounter.inc();
         this.log(userId + " logged as " + profileId);
       })()

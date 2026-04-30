@@ -11,6 +11,8 @@ function defaultState(id: number, actorId: number, name: string): PlayerState {
     id,
     actorId,
     name,
+    profileId:         null,
+    discordId:         null,
     holdId:           null,
     factions:         [],
     bounty:           {},

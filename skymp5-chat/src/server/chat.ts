@@ -15,7 +15,7 @@
 //   → executeJavaScript → parses #{color} codes → widgets.set → React re-render
 //
 // Client → Server flow
-//   Chat input → window.mp.send('cef::chat:send', text) → BrowserMessage
+//   Chat input → window.skyrimPlatform.sendMessage('cef::chat:send', text) → BrowserMessage
 //   → BrowserService forwards allowed browser messages as CustomPacket
 //   → mp.on('customPacket', …) → handleChatInput()
 //

@@ -3,6 +3,19 @@ import { System, Log, SystemContext } from "./system";
 
 type Mp = any; // TODO
 
+interface BackendAccessPayload {
+  permissions?: string[];
+  gameFactions?: Array<{
+    factionId: string;
+    rank: number;
+    title?: string;
+    permission?: string;
+    scope?: string;
+    group?: string;
+  }>;
+  factions?: unknown[];
+}
+
 function randomInteger(min: number, max: number) {
   const rand = min + Math.random() * (max + 1 - min);
   return Math.floor(rand);
@@ -14,7 +27,13 @@ export class Spawn implements System {
 
   async initAsync(ctx: SystemContext): Promise<void> {
     const settingsObject = await Settings.get();
-    const listenerFn = (userId: number, userProfileId: number, discordRoleIds: string[], discordId?: string) => {
+    const listenerFn = (
+      userId: number,
+      userProfileId: number,
+      discordRoleIds: string[],
+      discordId?: string,
+      backendAccess?: BackendAccessPayload
+    ) => {
       const { startPoints } = settingsObject;
       // TODO: Show race menu if character is not created after relogging
       let actorId = ctx.svr.getActorsByProfileId(userProfileId)[0];
@@ -38,8 +57,11 @@ export class Spawn implements System {
 
       const mp = ctx.svr as unknown as Mp;
       mp.set(actorId, "private.discordRoles", discordRoleIds);
+      mp.set(actorId, "private.frostfallAccess", backendAccess || { permissions: [], gameFactions: [], factions: [] });
+      mp.set(actorId, "private.frostfallProfileId", userProfileId);
 
       if (discordId !== undefined) {
+        mp.set(actorId, "private.frostfallDiscordId", discordId);
         // This helps us to test if indexes registration works in LoadForm or not
         if (mp.get(actorId, "private.indexed.discordId") !== discordId) {
           mp.set(actorId, "private.indexed.discordId", discordId);
