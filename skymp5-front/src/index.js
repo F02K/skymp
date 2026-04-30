@@ -21,6 +21,28 @@ if (!window.skyrimPlatform.widgets) {
 
 window.skympChat = window.skympChat || {};
 window.skympChat.MAX_MESSAGE_LENGTH = 300;
+window.skympChat.send = (message) => {
+  const text = String(message || '').trim();
+  if (!text) return false;
+
+  if (window.skyrimPlatform && typeof window.skyrimPlatform.sendMessage === 'function') {
+    window.skyrimPlatform.sendMessage('cef::chat:send', text);
+    return true;
+  }
+
+  if (window.mp && typeof window.mp.send === 'function') {
+    window.mp.send('cef::chat:send', text);
+    return true;
+  }
+
+  if (window.skymp && typeof window.skymp.send === 'function') {
+    window.skymp.send({ type: 'cef::chat:send', data: text });
+    return true;
+  }
+
+  console.error('[chat] No browser bridge is available for chat input');
+  return false;
+};
 window.skympChat.addMessage = (rawMessage) => {
   try {
     const raw = String(rawMessage || '');
@@ -76,7 +98,7 @@ window.skympChat.addMessage = (rawMessage) => {
       nextWidgets.push({
         type: 'chat',
         messages: window.chatMessages.slice(),
-        send: (message) => window.mp && window.mp.send('cef::chat:send', message)
+        send: window.skympChat.send
       });
     }
 

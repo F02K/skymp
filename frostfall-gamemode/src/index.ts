@@ -3,7 +3,7 @@
 
 import { store }    from './core/store'
 import { bus }      from './core/bus'
-import { getUserDisplayName } from './core/mpUtil'
+import { getUserDisplayName, safeGet } from './core/mpUtil'
 import { runGlobalProbes } from './tests/probeGlobals'
 import * as chat      from './systems/communication/chat'
 import * as courier   from './systems/communication/courier'
@@ -20,7 +20,6 @@ import * as college   from './systems/education/college'
 import * as skills    from './systems/education/skills'
 import * as training  from './systems/education/training'
 import * as commands  from './commands'
-import * as adminDashboard from './adminDashboard'
 import type { Mp }    from './types'
 
 export function init(mp: Mp): void {
@@ -58,7 +57,6 @@ export function init(mp: Mp): void {
   // ── Command layer ─────────────────────────────────────────────────────────
   const { handle: _handleCommand } = commands.registerAll(mp, store, bus)
   handleCommand = _handleCommand
-  adminDashboard.init(mp, store, bus)
 
   // ── Player lifecycle ──────────────────────────────────────────────────────
   mp.on('connect', (userId) => {
@@ -85,6 +83,10 @@ export function init(mp: Mp): void {
         }
 
         store.register(userId, actorId, name);
+        store.update(userId, {
+          profileId: safeGet<number | null>(mp, actorId, 'private.frostfallProfileId', null),
+          discordId: safeGet<string | null>(mp, actorId, 'private.frostfallDiscordId', null),
+        });
         console.log(`[gamemode] ${name} (${userId}) connected`);
 
         // Restore per-system state in dependency order
@@ -117,8 +119,8 @@ export function init(mp: Mp): void {
   })
 
   // ── Chat input from the browser ───────────────────────────────────────────
-  // window.mp.send('cef::chat:send', text) in the browser widget sends a
-  // customPacket with JSON body { type: 'cef::chat:send', data: text }.
+  // window.skyrimPlatform.sendMessage('cef::chat:send', text) in the browser
+  // widget sends a customPacket with JSON body { type: 'cef::chat:send', data: text }.
   // handleChatInput handles __reload__, all channels (/me /ooc /w /f), proximity,
   // history, and returns false only for unknown /commands so we can route them.
   mp.on('customPacket', (userId: number, content: string) => {

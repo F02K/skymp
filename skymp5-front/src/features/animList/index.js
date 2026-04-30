@@ -28,7 +28,9 @@ class AnimList extends React.Component {
         key={`anim-${index}`}
         onClick={() => {
           this.props.updateShow({ show: false });
-          window.mp.send("cef::chat:send", `/anim ${index}`);
+          if (window.skympChat && typeof window.skympChat.send === 'function') {
+            window.skympChat.send(`/anim ${index}`);
+          }
         }}
       >
         {anim.name}

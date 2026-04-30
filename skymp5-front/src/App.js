@@ -22,10 +22,13 @@ class App extends React.Component {
     window.mp = {
       send: (type, data) => {
         try {
-          window.skymp.send({
-            type,
-            data
-          });
+          if (window.skyrimPlatform && typeof window.skyrimPlatform.sendMessage === 'function') {
+            window.skyrimPlatform.sendMessage(type, data);
+            return;
+          }
+          if (window.skymp && typeof window.skymp.send === 'function') {
+            window.skymp.send({ type, data });
+          }
         } catch (err) {
           console.error('[skymp] Failed to send browser message', type, data, err);
         }

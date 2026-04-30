@@ -102,6 +102,10 @@ export interface Mp {
   getUserMasterApiBalance?(userId: number): Promise<number>
   /** Deduct credits from a player's master-api balance. */
   makeUserMasterApiPurchase?(userId: number, balanceToSpend: number): Promise<{ balanceSpent: number; success: boolean }>
+  /** Persist one official faction slot on the backend dashboard. */
+  assignBackendFaction?(profileId: number, requirementId: string, playerName?: string, notes?: string): Promise<BackendFactionSync>
+  /** Remove one official faction slot on the backend dashboard. */
+  removeBackendFaction?(profileId: number, assignmentId: string): Promise<BackendFactionSync>
 
   // ── Gamemode lifecycle hooks ─────────────────────────────────────────────────
   /**
@@ -147,6 +151,8 @@ export interface PlayerState {
   id: number
   actorId: number
   name: string
+  profileId: number | null
+  discordId: string | null
   holdId: string | null
   factions: string[]
   bounty: Record<string, number>
@@ -162,6 +168,13 @@ export interface PlayerState {
   minutesOnline: number
   isStaff: boolean
   isLeader: boolean
+}
+
+export interface BackendFactionSync {
+  assignment?: unknown
+  permissions: string[]
+  gameFactions: unknown[]
+  factions: unknown[]
 }
 
 export interface Store {
@@ -205,6 +218,11 @@ export interface FactionMembership {
   factionId: string
   rank: number
   joinedAt: number
+  source?: 'backend' | 'local'
+  title?: string
+  permission?: string
+  scope?: string
+  group?: string
 }
 
 export interface FactionDocument {

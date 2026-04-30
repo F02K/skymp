@@ -49,7 +49,7 @@ export const COLORS = {
 
 /**
  * The key used by the frontend when the user sends a chat message:
- *   window.mp.send(BROWSER_EVENT_TYPE, text)
- * which becomes: window.skymp.send({ type: BROWSER_EVENT_TYPE, data: text })
+ *   window.skyrimPlatform.sendMessage(BROWSER_EVENT_TYPE, text)
+ * which becomes a browser message with arguments [BROWSER_EVENT_TYPE, text].
  */
 export const BROWSER_EVENT_TYPE = 'cef::chat:send'

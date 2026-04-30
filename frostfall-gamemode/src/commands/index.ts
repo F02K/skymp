@@ -15,6 +15,7 @@ import * as prison from '../systems/justice/prison'
 import * as skills from '../systems/education/skills'
 import * as training from '../systems/education/training'
 import * as chat from '../systems/communication/chat'
+import { safeGet } from '../core/mpUtil'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ const COMMAND_HELP: CommandHelp[] = [
   { name: 'down', usage: '/down [name]', description: 'Force a player down.', permission: 'staff' },
   { name: 'rise', usage: '/rise [name]', description: 'Raise a downed player.', permission: 'staff' },
   { name: 'nvfl', usage: '/nvfl clear [name]', description: 'Clear NVFL state.', permission: 'staff' },
-  { name: 'faction', usage: '/faction join|leave|rank|bbb ...', description: 'Manage faction membership and BBB docs.', permission: 'leader' },
+  { name: 'faction', usage: '/faction assign|unassign|slots|join|leave|rank|bbb ...', description: 'Manage faction membership and BBB docs.', permission: 'leader' },
   { name: 'sober', usage: '/sober [name]', description: 'Clear drunk state.', permission: 'staff' },
   { name: 'feed', usage: '/feed [name] (levels)', description: 'Restore hunger levels.', permission: 'staff' },
 ]
@@ -360,6 +361,29 @@ export function registerAll(mp: Mp, store: Store, bus: Bus): { handle: (userId: 
       if (!target || !factionId || isNaN(rank)) return reply(mp, store, userId, 'Usage: /faction rank [name] [factionId] [rank]')
       factions.joinFaction(mp, store, bus, target.id, factionId, rank)
       reply(mp, store, userId, `${target.name} set to rank ${rank} in ${factionId}.`)
+    } else if (sub === 'assign') {
+      if (!checkPermission(store, userId, 'leader')) return reply(mp, store, userId, 'No permission.')
+      const target = findPlayer(store, args[1])
+      const requirementId = args[2]
+      if (!target || !requirementId) return reply(mp, store, userId, 'Usage: /faction assign [name] [slotId]')
+      _assignBackendFaction(mp, store, userId, target, requirementId)
+    } else if (sub === 'unassign') {
+      if (!checkPermission(store, userId, 'leader')) return reply(mp, store, userId, 'No permission.')
+      const target = findPlayer(store, args[1])
+      const assignmentId = args[2]
+      if (!target || !assignmentId) return reply(mp, store, userId, 'Usage: /faction unassign [name] [assignmentId]')
+      _removeBackendFaction(mp, store, userId, target, assignmentId)
+    } else if (sub === 'slots') {
+      if (!checkPermission(store, userId, 'leader')) return reply(mp, store, userId, 'No permission.')
+      const target = findPlayer(store, args[1])
+      if (!target) return reply(mp, store, userId, 'Usage: /faction slots [name]')
+      const access = safeGet<any>(mp, target.actorId, 'private.frostfallAccess', {})
+      const assignments = Array.isArray(access.factions) ? access.factions : []
+      if (!assignments.length) return reply(mp, store, userId, `${target.name} has no backend faction slots.`)
+      reply(mp, store, userId, assignments.map((item: any) => {
+        const req = item.requirement || {}
+        return `${item.id}: ${req.group || item.requirementId} ${req.rank || ''}`.trim()
+      }).join('\n'))
     } else if (sub === 'bbb') {
       if (args[1] === 'set') {
         if (!checkPermission(store, userId, 'staff')) return reply(mp, store, userId, 'No permission.')
@@ -371,7 +395,7 @@ export function registerAll(mp: Mp, store: Store, bus: Bus): { handle: (userId: 
         reply(mp, store, userId, `[${factionId}] Benefits: ${doc.benefits}\nBurdens: ${doc.burdens}\nBylaws: ${doc.bylaws}`)
       }
     } else {
-      reply(mp, store, userId, 'Usage: /faction join|leave|rank|bbb ...')
+      reply(mp, store, userId, 'Usage: /faction assign|unassign|slots|join|leave|rank|bbb ...')
     }
   }
 
@@ -432,4 +456,38 @@ function _findStewardForProperty(store: Store, propertyId: string): number | nul
 function _findJarlForHold(store: Store, holdId: string): number | null {
   const candidates = store.getAll().filter(p => p.holdId === holdId && p.isLeader)
   return candidates.length ? candidates[0].id : null
+}
+
+function _assignBackendFaction(mp: Mp, store: Store, actorId: number, target: PlayerState, requirementId: string): void {
+  if (!target.profileId) return reply(mp, store, actorId, `${target.name} is missing a backend profile link.`)
+  if (typeof mp.assignBackendFaction !== 'function') return reply(mp, store, actorId, 'Backend faction sync is unavailable.')
+
+  reply(mp, store, actorId, `Recording faction appointment for ${target.name}...`)
+  mp.assignBackendFaction(target.profileId, requirementId, target.name)
+    .then(payload => {
+      factions.refreshBackendMemberships(mp, store, target.id, payload)
+      reply(mp, store, actorId, `${target.name} assigned to ${requirementId}.`)
+      reply(mp, store, target.id, 'Your faction appointment has been recorded.')
+    })
+    .catch((err: any) => {
+      console.error(`[commands] Backend faction assignment failed: ${err.message}`)
+      reply(mp, store, actorId, `Backend faction assignment failed: ${err.message}`)
+    })
+}
+
+function _removeBackendFaction(mp: Mp, store: Store, actorId: number, target: PlayerState, assignmentId: string): void {
+  if (!target.profileId) return reply(mp, store, actorId, `${target.name} is missing a backend profile link.`)
+  if (typeof mp.removeBackendFaction !== 'function') return reply(mp, store, actorId, 'Backend faction sync is unavailable.')
+
+  reply(mp, store, actorId, `Recording faction removal for ${target.name}...`)
+  mp.removeBackendFaction(target.profileId, assignmentId)
+    .then(payload => {
+      factions.refreshBackendMemberships(mp, store, target.id, payload)
+      reply(mp, store, actorId, `${target.name} removed from backend slot ${assignmentId}.`)
+      reply(mp, store, target.id, 'Your faction appointment has been updated.')
+    })
+    .catch((err: any) => {
+      console.error(`[commands] Backend faction removal failed: ${err.message}`)
+      reply(mp, store, actorId, `Backend faction removal failed: ${err.message}`)
+    })
 }
