@@ -11,7 +11,7 @@ import { SkyrimHint } from '../../components/SkyrimHint/SkyrimHint';
 import { IPlayerData } from '../../interfaces/skillMenu';
 
 const TestMenu = ({ send }: { send: (message: string) => void }) => {
-  const [currentHeader, setcurrentHeader] = useState('abilities');
+  const [currentHeader, setcurrentHeader] = useState('способности');
   const [currentLevel, setcurrentLevel] = useState(' ');
   const [currentDescription, setcurrentDescription] = useState(' ');
   const [selectedPerk, setselectedPerk] = useState(null);
@@ -109,11 +109,11 @@ const TestMenu = ({ send }: { send: (message: string) => void }) => {
             >
               <SkyrimHint
                 active="true"
-                text={'memory is required to learn new abilities'}
+                text={'память нужна для изучения новых способностей'}
                 isOpened={memHint}
                 left={true}
               />
-              <span>memory:</span>
+              <span>память:</span>
               <span className="perks__exp-container__line__price">
                 {pMem}
                 <span className="perks__exp" style={{ opacity: 0 }} />
@@ -138,12 +138,12 @@ const TestMenu = ({ send }: { send: (message: string) => void }) => {
                     onMouseLeave={() => setexpHint(false)}
                   >
                     <SkyrimHint
-                      text={'experience can be used to improve abilities'}
+                      text={'за опыт можно улучшить способности'}
                       isOpened={expHint}
                       active="true"
                       left={true}
                     />
-                    <span>experience:</span>
+                    <span>опыт:</span>
                     <span className="perks__exp-container__line__price">
                       {pExp}
                       <span className="perks__exp" />
@@ -151,7 +151,7 @@ const TestMenu = ({ send }: { send: (message: string) => void }) => {
                   </div>
                 </div>
                 <FrameButton
-                  text="learn"
+                  text="изучить"
                   name="learnBtn"
                   variant="DEFAULT"
                   width={242}
@@ -161,14 +161,14 @@ const TestMenu = ({ send }: { send: (message: string) => void }) => {
                   ? (
                   <div className="perks__footer__buttons__confirm">
                     <FrameButton
-                      text="yes"
+                      text="да"
                       name="yesBtn"
                       variant="DEFAULT"
                       width={178}
                       height={56}
                     ></FrameButton>
                     <FrameButton
-                      text="no"
+                      text="нет"
                       name="noBtn"
                       variant="DEFAULT"
                       width={178}
@@ -179,7 +179,7 @@ const TestMenu = ({ send }: { send: (message: string) => void }) => {
                     )
                   : (
                   <FrameButton
-                    text="reset all"
+                    text="сбросить все"
                     name="discardBtn"
                     variant="DEFAULT"
                     width={242}
@@ -191,7 +191,7 @@ const TestMenu = ({ send }: { send: (message: string) => void }) => {
               <div className="perks__footer__exit-button">
                 <FrameButton
                   name="extBtn"
-                  text="exit"
+                  text="выйти"
                   variant="DEFAULT"
                   width={242}
                   height={56}

@@ -11,13 +11,12 @@
 //   /f             faction members only
 //
 // Server → Client flow
-//   deliver() → mp.set(actorId, 'chatMsg', '#{rrggbb}text…') → updateOwner
+//   deliver() → mp.set(actorId, 'ff_chatMsg', '#{rrggbb}text…') → updateOwner
 //   → executeJavaScript → parses #{color} codes → widgets.set → React re-render
 //
 // Client → Server flow
-//   Chat input → window.skyrimPlatform.sendMessage('cef::chat:send', text) → BrowserMessage
-//   → BrowserService forwards allowed browser messages as CustomPacket
-//   → mp.on('customPacket', …) → handleChatInput()
+//   Chat input → window.skyrimPlatform.sendMessage('chatSend', text) → BrowserMessage
+//   → makeEventSource browserMessage listener → mp._onChatSend → handleChatInput()
 //
 // Public API (same as original chat.ts — no gamemode changes needed)
 //   init(mp)
@@ -38,7 +37,7 @@ import type { Mp, Store } from '../../types'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const CHAT_MSG_PROP  = 'chatMsg'
+const CHAT_MSG_PROP  = 'ff_chatMsg'
 const SAY_RANGE      = 3500    // Skyrim units ≈ 50 m
 const WHISPER_RANGE  = 400     // units ≈ 6 m
 export const MAX_MSG_LEN = 300
@@ -48,7 +47,7 @@ const RATE_LIMIT_MS  = 1000
 // ── Client-side bridge ────────────────────────────────────────────────────────
 //
 // updateOwner runs in the Skyrim Platform Chakra context (ES5-safe) whenever
-// the server sets a new value on 'chatMsg'.
+// the server sets a new value on 'ff_chatMsg'.
 //
 // Message wire format: "#{rrggbb}segment1#{rrggbb}segment2…"
 // The browser-side code parses #{color} codes into Span segments and pushes a
@@ -59,23 +58,72 @@ const RATE_LIMIT_MS  = 1000
 // use ctx.state to guard against re-delivering the same value each frame.
 // When the property is reset to '' (the clear-before-send pattern in deliver()),
 // we wipe the guard so the same payload can be shown again if re-sent.
+// The send function injected into the chat widget.
+// window.mp.send is wired by App.js componentDidMount → skyrimPlatform.sendMessage,
+// which the SkyMP client forwards to the server as a customPacket {type, data}.
+// MUST use only single quotes — this string is embedded inside Chakra double-quoted string pieces.
+const CHAT_SEND_JS =
+  "function(t){if(window.mp&&typeof window.mp.send==='function')window.mp.send('cef::chat:send',t);}"
+
+// Parses '#{rrggbb}text#{rrggbb}text…' into a ChatMsg compatible with the
+// skymp5-front Chat component.  Split on '#{' — first piece may be unstyled
+// text, subsequent pieces start with 'rrggbb}' then the text body.
+// MUST use only single quotes — same embedding constraint as CHAT_SEND_JS.
+const PARSE_MSG_JS =
+  "var parts=raw.split('#{');" +
+  "var segs=[];var col='#fafafa';" +
+  "for(var i=0;i<parts.length;i++){" +
+  "var p=parts[i];" +
+  "if(i===0){if(p)segs.push({text:p,color:col,opacity:1,type:['default']});continue;}" +
+  "var ci=p.indexOf('}');" +
+  "if(ci===6){col='#'+p.slice(0,6);var txt=p.slice(7);if(txt)segs.push({text:txt,color:col,opacity:1,type:['default']});}" +
+  "else{segs.push({text:'#{'+p,color:col,opacity:1,type:['default']});}" +
+  "}"
+
 const UPDATE_OWNER_JS = `
 (function(){
-  var rawMsg=String(ctx.value||"");
-  if(!rawMsg){ctx.state._chatLastMsg="";return;}
+  ctx.sp.browser.executeJavaScript(
+    "(function(){"+
+    "  try{"+
+    "    if(!window.chatMessages)window.chatMessages=[];"+
+    "    if(!window.skyrimPlatform||!window.skyrimPlatform.widgets)return;"+
+    "    var ws=window.skyrimPlatform.widgets.get();"+
+    "    if(ws.some(function(w){return w.type==='chat';}))return;"+
+    "    var sf=${CHAT_SEND_JS};"+
+    "    window.skyrimPlatform.widgets.set(ws.concat([{type:'chat',messages:window.chatMessages.slice(),send:sf}]));"+
+    "  }catch(e){}"+
+    "})();"
+  );
+  var rawMsg=String(ctx.value||'');
+  if(!rawMsg){ctx.state._chatLastMsg='';return;}
   if(ctx.state._chatLastMsg===rawMsg)return;
   ctx.state._chatLastMsg=rawMsg;
   var safeMsg=JSON.stringify(rawMsg);
   ctx.sp.browser.executeJavaScript(
-    "(function(){"+
-    "  try{"+
-    "    if(window.skympChat&&typeof window.skympChat.addMessage==='function'){"+
-    "      window.skympChat.addMessage("+safeMsg+");"+
-    "    }else{"+
-    "      console.error('[chat] window.skympChat.addMessage is not available');"+
-    "    }"+
-    "  }catch(e){console.error('[chat] Failed to render message',e&&e.stack?e.stack:e);}"+
-    "})();"
+    '(function(){'+
+    '  try{'+
+    '    var raw='+safeMsg+';'+
+    '    ${PARSE_MSG_JS}'+
+    '    if(!segs.length)return;'+
+    '    if(!window.chatMessages)window.chatMessages=[];'+
+    '    window.chatMessages.push({text:segs,category:\'plain\',opacity:1});'+
+    '    if(window.chatMessages.length>50)window.chatMessages.shift();'+
+    '    if(!window.skyrimPlatform||!window.skyrimPlatform.widgets)return;'+
+    '    var ws=window.skyrimPlatform.widgets.get();'+
+    '    var found=false;'+
+    '    var next=ws.map(function(w){'+
+    '      if(w.type!==\'chat\')return w;'+
+    '      found=true;'+
+    '      return Object.assign({},w,{messages:window.chatMessages.slice()});'+
+    '    });'+
+    '    if(!found){'+
+    '      var sf=${CHAT_SEND_JS};'+
+    '      next=ws.concat([{type:\'chat\',messages:window.chatMessages.slice(),send:sf}]);'+
+    '    }'+
+    '    window.skyrimPlatform.widgets.set(next);'+
+    '    if(typeof window.scrollToLastMessage===\'function\')window.scrollToLastMessage();'+
+    '  }catch(e){}'+
+    '})();'
   );
 })();
 `.trim()
@@ -222,6 +270,11 @@ function sendProximity(
 }
 
 // ── init ──────────────────────────────────────────────────────────────────────
+
+/** Call once after an actor becomes ready to ensure updateOwner fires. */
+export function initClientChat(mp: Mp, actorId: number): void {
+  safeSet(mp, actorId, CHAT_MSG_PROP, '')
+}
 
 export function init(mp: Mp): void {
   mp.makeProperty(CHAT_MSG_PROP, {

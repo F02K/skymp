@@ -22,6 +22,8 @@ import * as training  from './systems/education/training'
 import * as commands  from './commands'
 import type { Mp }    from './types'
 
+const CHAT_BROWSER_EVENT = 'cef::chat:send'
+
 export function init(mp: Mp): void {
   console.log('[gamemode] Frostfall Roleplay — initializing')
 
@@ -57,6 +59,15 @@ export function init(mp: Mp): void {
   // ── Command layer ─────────────────────────────────────────────────────────
   const { handle: _handleCommand } = commands.registerAll(mp, store, bus)
   handleCommand = _handleCommand
+
+  const dispatchChatText = (userId: number, text: unknown): void => {
+    const value = String(text || '').trim().slice(0, chat.MAX_MSG_LEN)
+    if (!value) return
+    if (value.startsWith('/')) console.log(`[chat] command input from ${userId}: ${value}`)
+    if (!chat.handleChatInput(mp, store, userId, value)) {
+      handleCommand?.(userId, value)
+    }
+  }
 
   // ── Player lifecycle ──────────────────────────────────────────────────────
   mp.on('connect', (userId) => {
@@ -99,6 +110,10 @@ export function init(mp: Mp): void {
         college.onConnect(mp, store, bus, userId);
         skills.onConnect(mp, store, bus, userId);
         courier.onConnect(mp, store, bus, userId);
+
+        // Trigger the chat property so updateOwner fires and the client browser
+        // mounts the chat widget.
+        chat.initClientChat(mp, actorId);
       }
       catch (err: any) {
         console.error(`[gamemode] connect error for ${userId}: ${err.message}`);
@@ -119,20 +134,14 @@ export function init(mp: Mp): void {
   })
 
   // ── Chat input from the browser ───────────────────────────────────────────
-  // window.skyrimPlatform.sendMessage('cef::chat:send', text) in the browser
-  // widget sends a customPacket with JSON body { type: 'cef::chat:send', data: text }.
-  // handleChatInput handles __reload__, all channels (/me /ooc /w /f), proximity,
-  // history, and returns false only for unknown /commands so we can route them.
+  // The skymp5-front Chat widget calls window.mp.send('cef::chat:send', text),
+  // which App.js routes to window.skyrimPlatform.sendMessage, and the SkyMP
+  // client forwards as a customPacket { type, data } to the server.
   mp.on('customPacket', (userId: number, content: string) => {
     try {
       const packet = JSON.parse(content)
-      if (packet.type !== 'cef::chat:send') return
-      const text = String(packet.data || '').trim().slice(0, chat.MAX_MSG_LEN)
-      if (!text) return
-      if (text.startsWith('/')) console.log(`[chat] command input from ${userId}: ${text}`)
-      if (!chat.handleChatInput(mp, store, userId, text)) {
-        handleCommand?.(userId, text)
-      }
+      if (packet.type !== CHAT_BROWSER_EVENT) return
+      dispatchChatText(userId, packet.data)
     } catch (err: any) {
       console.error(`[chat] customPacket error: ${err.message}`)
     }
