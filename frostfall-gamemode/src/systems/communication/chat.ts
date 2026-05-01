@@ -59,11 +59,15 @@ const RATE_LIMIT_MS  = 1000
 // When the property is reset to '' (the clear-before-send pattern in deliver()),
 // we wipe the guard so the same payload can be shown again if re-sent.
 // The send function injected into the chat widget.
-// window.mp.send is wired by App.js componentDidMount → skyrimPlatform.sendMessage,
-// which the SkyMP client forwards to the server as a customPacket {type, data}.
-// MUST use only single quotes — this string is embedded inside Chakra double-quoted string pieces.
+// Uses window.skyrimPlatform.sendMessage directly — the same API index.js uses for
+// 'front-loaded'. BrowserService.tryForwardBrowserCustomPacketArgs handles the two-arg
+// form: sendMessage('cef::chat:send', text) → e.arguments = ['cef::chat:send', text].
+// MUST use only single quotes inside — embedded in Chakra double-quoted string pieces.
 const CHAT_SEND_JS =
-  "function(t){if(window.mp&&typeof window.mp.send==='function')window.mp.send('cef::chat:send',t);}"
+  "function(t){" +
+  "if(window.skyrimPlatform&&typeof window.skyrimPlatform.sendMessage==='function')" +
+  "window.skyrimPlatform.sendMessage('cef::chat:send',t);" +
+  "}"
 
 // Parses '#{rrggbb}text#{rrggbb}text…' into a ChatMsg compatible with the
 // skymp5-front Chat component.  Split on '#{' — first piece may be unstyled
@@ -80,18 +84,26 @@ const PARSE_MSG_JS =
   "else{segs.push({text:'#{'+p,color:col,opacity:1,type:['default']});}" +
   "}"
 
+// window.skyrimPlatform.widgets only exposes set/addListener/removeListener — there is
+// no get().  We mirror widget state ourselves via _ffWidgets, populated by addListener
+// the first time the property fires.  Reading _ffWidgets instead of calling .get()
+// avoids the TypeError that the try-catch was silently swallowing.
 const UPDATE_OWNER_JS = `
 (function(){
   ctx.sp.browser.executeJavaScript(
     "(function(){"+
-    "  try{"+
-    "    if(!window.chatMessages)window.chatMessages=[];"+
-    "    if(!window.skyrimPlatform||!window.skyrimPlatform.widgets)return;"+
-    "    var ws=window.skyrimPlatform.widgets.get();"+
-    "    if(ws.some(function(w){return w.type==='chat';}))return;"+
-    "    var sf=${CHAT_SEND_JS};"+
-    "    window.skyrimPlatform.widgets.set(ws.concat([{type:'chat',messages:window.chatMessages.slice(),send:sf}]));"+
-    "  }catch(e){}"+
+    "try{"+
+    "if(!window.chatMessages)window.chatMessages=[];"+
+    "if(!window.skyrimPlatform||!window.skyrimPlatform.widgets)return;"+
+    "if(!window._ffWidgets){"+
+    "window._ffWidgets=[];"+
+    "window.skyrimPlatform.widgets.addListener(function(ws){window._ffWidgets=ws;});"+
+    "}"+
+    "var ws=window._ffWidgets;"+
+    "if(ws.some(function(w){return w.type==='chat';}))return;"+
+    "var sf=${CHAT_SEND_JS};"+
+    "window.skyrimPlatform.widgets.set(ws.concat([{type:'chat',messages:window.chatMessages.slice(),send:sf}]));"+
+    "}catch(e){}"+
     "})();"
   );
   var rawMsg=String(ctx.value||'');
@@ -100,30 +112,30 @@ const UPDATE_OWNER_JS = `
   ctx.state._chatLastMsg=rawMsg;
   var safeMsg=JSON.stringify(rawMsg);
   ctx.sp.browser.executeJavaScript(
-    '(function(){'+
-    '  try{'+
-    '    var raw='+safeMsg+';'+
-    '    ${PARSE_MSG_JS}'+
-    '    if(!segs.length)return;'+
-    '    if(!window.chatMessages)window.chatMessages=[];'+
-    '    window.chatMessages.push({text:segs,category:\'plain\',opacity:1});'+
-    '    if(window.chatMessages.length>50)window.chatMessages.shift();'+
-    '    if(!window.skyrimPlatform||!window.skyrimPlatform.widgets)return;'+
-    '    var ws=window.skyrimPlatform.widgets.get();'+
-    '    var found=false;'+
-    '    var next=ws.map(function(w){'+
-    '      if(w.type!==\'chat\')return w;'+
-    '      found=true;'+
-    '      return Object.assign({},w,{messages:window.chatMessages.slice()});'+
-    '    });'+
-    '    if(!found){'+
-    '      var sf=${CHAT_SEND_JS};'+
-    '      next=ws.concat([{type:\'chat\',messages:window.chatMessages.slice(),send:sf}]);'+
-    '    }'+
-    '    window.skyrimPlatform.widgets.set(next);'+
-    '    if(typeof window.scrollToLastMessage===\'function\')window.scrollToLastMessage();'+
-    '  }catch(e){}'+
-    '})();'
+    "(function(){"+
+    "try{"+
+    "var raw="+safeMsg+";"+
+    "${PARSE_MSG_JS}"+
+    "if(!segs.length)return;"+
+    "if(!window.chatMessages)window.chatMessages=[];"+
+    "window.chatMessages.push({text:segs,category:'plain',opacity:1});"+
+    "if(window.chatMessages.length>50)window.chatMessages.shift();"+
+    "if(!window.skyrimPlatform||!window.skyrimPlatform.widgets)return;"+
+    "var ws=window._ffWidgets||[];"+
+    "var found=false;"+
+    "var next=ws.map(function(w){"+
+    "if(w.type!=='chat')return w;"+
+    "found=true;"+
+    "return Object.assign({},w,{messages:window.chatMessages.slice()});"+
+    "});"+
+    "if(!found){"+
+    "var sf=${CHAT_SEND_JS};"+
+    "next=ws.concat([{type:'chat',messages:window.chatMessages.slice(),send:sf}]);"+
+    "}"+
+    "window.skyrimPlatform.widgets.set(next);"+
+    "if(typeof window.scrollToLastMessage==='function')window.scrollToLastMessage();"+
+    "}catch(e){}"+
+    "})();"
   );
 })();
 `.trim()

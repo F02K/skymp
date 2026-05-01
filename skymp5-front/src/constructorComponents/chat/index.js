@@ -158,6 +158,16 @@ const Chat = (props) => {
   }, [isInputHidden]);
 
   useEffect(() => {
+    const onBrowserFocus = () => {
+      if (inputRef.current && !isInputHidden) {
+        inputRef.current.focus();
+      }
+    };
+    window.addEventListener('skymp5-client:browserFocused', onBrowserFocus);
+    return () => window.removeEventListener('skymp5-client:browserFocused', onBrowserFocus);
+  }, [isInputHidden]);
+
+  useEffect(() => {
     if (window.needToScroll) window.scrollToLastMessage();
     if (inputRef !== undefined && inputRef.current !== undefined) {
       inputRef.current.focus();
@@ -191,7 +201,7 @@ const Chat = (props) => {
   };
 
   const getList = () => {
-    return window.chatMessages.map((msg, index) => {
+    return (window.chatMessages || []).map((msg, index) => {
       const result = getMessageSpans(msg);
       return (
         <div
