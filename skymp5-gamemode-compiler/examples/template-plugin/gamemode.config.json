@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/@skymp/gamemode-compiler/gamemode.config.schema.json",
+  "outfile": "build/gamemode.js",
+  "plugins": [
+    {
+      "name": "template-plugin",
+      "entry": "src/index.ts"
+    }
+  ],
+  "external": []
+}
