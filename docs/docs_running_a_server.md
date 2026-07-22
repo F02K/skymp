@@ -8,6 +8,23 @@ As you already know Skyrim Multiplayer is releasing public server builds. Here i
 
 The server requires `Windows 8.1` / `Windows Server 2012` or higher. It may still launch on older operating systems, but correct work isn't guaranteed.
 
+## Managed operator backend (fork extension)
+
+This fork can package an operator-owned backend without changing the upstream
+SkyMP server or its direct launch path. Run:
+
+```text
+node scripts/package-managed-server.mjs
+```
+
+The command builds `skymp-backend`, copies it to
+`build/dist/server/backend/`, and creates `launch_managed_server.bat` plus
+`launch_managed_server.sh`. Copy the generated backend config example to
+`backend.config.json`, set the required secrets in the service environment,
+and point SkyMP's existing `master` setting at the backend's loopback-only
+internal listener. `launch_server.bat` remains the unchanged upstream/debug
+entry point. Full setup and security notes are in `skymp-backend/README.md`.
+
 You obviously need to have 64-bit Windows version since the server is 64-bit program.
 
 You are able to build whole project from sources. Server build would be in `build/dist/server`. Use `launch_server.bat` to launch.
