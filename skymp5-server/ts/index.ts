@@ -1,4 +1,5 @@
 import * as ui from "./ui";
+import { setupGamemode } from "./gamemodeLoader";
 
 // @ts-ignore
 import * as sourceMapSupport from "source-map-support";
@@ -24,76 +25,10 @@ import { DiscordBanSystem } from "./systems/discordBanSystem";
 import { MasterApiBalanceSystem } from "./systems/masterApiBalanceSystem";
 import { EventEmitter } from "events";
 import { pid } from "process";
-import * as fs from "fs";
-import * as chokidar from "chokidar";
-import * as path from "path";
-import * as os from "os";
 
 import * as manifestGen from "./manifestGen";
 import { createScampServer } from "./scampNative";
 import { MetricsSystem, tickDurationHistogram, tickDurationSummary } from "./systems/metricsSystem";
-
-const gamemodeCache = new Map<string, string>();
-
-function requireTemp(module: string) {
-  // https://blog.mastykarz.nl/create-temp-directory-app-node-js/
-  let tmpDir;
-  const appPrefix = 'skymp5-server';
-  try {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), appPrefix));
-
-    const contents = fs.readFileSync(module, 'utf8');
-    const tempPath = path.join(tmpDir, Math.random() + '-' + Date.now() + '.js');
-    fs.writeFileSync(tempPath, contents);
-
-    require(tempPath);
-  } catch (e) {
-    console.error(e.stack);
-  } finally {
-    try {
-      if (tmpDir) {
-        fs.rmSync(tmpDir, { recursive: true });
-      }
-    } catch (e) {
-      console.error(`An error has occurred while removing the temp folder at ${tmpDir}. Please remove it manually. Error: ${e}`);
-    }
-  }
-}
-
-function requireUncached(
-  module: string,
-  clear: () => void,
-  server: scampNative.ScampServer
-): void {
-  let gamemodeContents = fs.readFileSync(require.resolve(module), "utf8");
-
-  // Reload gamemode.js only if there are real changes
-  const gamemodeContentsOld = gamemodeCache.get(module);
-  if (gamemodeContentsOld !== gamemodeContents) {
-    gamemodeCache.set(module, gamemodeContents);
-
-    while (1) {
-      try {
-        clear();
-
-        // In native module we now register mp-api methods into the ScampServer class
-        // This workaround allows code that is bound to global 'mp' object to run
-        // @ts-ignore
-        globalThis.mp = globalThis.mp || server;
-
-        requireTemp(module);
-        return;
-      } catch (e) {
-        if (`${e}`.indexOf("'JsRun' returned error 0x30002") === -1) {
-          throw e;
-        } else {
-          console.log("Bad syntax, ignoring");
-          return;
-        }
-      }
-    }
-  }
-}
 
 const setupStreams = (scampNative: any) => {
   class LogsStream {
@@ -120,66 +55,6 @@ const setupStreams = (scampNative: any) => {
   process.stderr.write = (chunk: Buffer, encoding: string, callback: () => void) => {
     errorStream.write(chunk, encoding, callback);
   };
-};
-
-const setupGamemode = (server: any, gamemodePath: string) => {
-  const clear = () => server.clear();
-
-  const toAbsolute = (p: string) => {
-    if (path.isAbsolute(p)) {
-      return p;
-    }
-    return path.resolve("", p);
-  };
-
-  const absoluteGamemodePath = toAbsolute(gamemodePath);
-  console.log(`Gamemode path is "${absoluteGamemodePath}"`);
-
-  if (!fs.existsSync(absoluteGamemodePath)) {
-    console.log(
-      `Error during loading a gamemode from "${absoluteGamemodePath}" - file or directory does not exist`,
-    );
-    return;
-  }
-
-  try {
-    requireUncached(absoluteGamemodePath, clear, server);
-  } catch (e) {
-    console.error(e);
-  }
-
-  const watcher = chokidar.watch(absoluteGamemodePath, {
-    ignored: /^\./,
-    persistent: true,
-    awaitWriteFinish: true,
-  });
-
-  const numReloads = { n: 0 };
-
-  const reloadGamemode = () => {
-    try {
-      requireUncached(absoluteGamemodePath, clear, server);
-      numReloads.n++;
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const reloadGamemodeTimeout = function () {
-    const n = numReloads.n;
-    setTimeout(
-      () => (n === numReloads.n ? reloadGamemode() : undefined),
-      1000,
-    );
-  };
-
-  watcher.on("add", reloadGamemodeTimeout);
-  watcher.on("addDir", reloadGamemodeTimeout);
-  watcher.on("change", reloadGamemodeTimeout);
-  watcher.on("unlink", reloadGamemodeTimeout);
-  watcher.on("error", function (error) {
-    console.error("Error happened in chokidar watch", error);
-  });
 };
 
 const main = async () => {

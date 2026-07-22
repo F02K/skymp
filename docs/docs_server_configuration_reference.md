@@ -240,6 +240,12 @@ Searches for `index.js` if a directory specified.
 }
 ```
 
+The server resolves and loads this path directly. It may point to a JavaScript
+file or to a directory with a Node-compatible entry such as `index.js`.
+Relative imports and external npm packages are resolved from the real gamemode
+location. See [Gamemode Compiler](docs_gamemode_compiler.md) for bundling
+multiple TypeScript plugins into this file.
+
 ## startPoints
 
 Contains a list of spawn points, one of which will be chosen at random.
