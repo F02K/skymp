@@ -1,4 +1,3 @@
-import * as crypto from "crypto";
 import * as fs from "fs";
 import { AuthGameData, RemoteAuthGameData, authGameDataStorageKey } from "../../features/authModel";
 import { FunctionInfo } from "../../lib/functionInfo";
@@ -6,8 +5,6 @@ import { ClientListener, CombinedController, Sp } from "./clientListener";
 import { BrowserMessageEvent, Menu, browser } from "skyrimPlatform";
 import { AuthNeededEvent } from "../events/authNeededEvent";
 import { BrowserWindowLoadedEvent } from "../events/browserWindowLoadedEvent";
-import { TimersService } from "./timersService";
-import { MasterApiAuthStatus } from "../messages_http/masterApiAuthStatus";
 import { logTrace, logError } from "../../logging";
 import { ConnectionMessage } from "../events/connectionMessage";
 import { CreateActorMessage } from "../messages/createActorMessage";
@@ -15,7 +12,6 @@ import { CustomPacketMessage } from "../messages/customPacketMessage";
 import { NetworkingService } from "./networkingService";
 import { MsgType } from "../../messages";
 import { ConnectionDenied } from "../events/connectionDenied";
-import { SettingsService } from "./settingsService";
 
 // for browsersideWidgetSetter
 declare const window: any;
@@ -123,24 +119,33 @@ export class AuthService extends ClientListener {
     this.controller.on("browserMessage", (e) => this.onBrowserMessage(e));
     this.controller.on("tick", () => this.onTick());
     this.controller.once("update", () => this.onceUpdate());
+
+    if (this.sp.settings["skymp5-client"]["launchMode"] !== "directory-managed") {
+      browserState.loginFailedReason = "Dieser Client muss über einen aktuellen SkyMP Launcher gestartet werden.";
+      browserState.comment = "This client must be started through a current SkyMP Launcher.";
+      this.setListenBrowserMessage(true, "launcher-managed runtime data is missing");
+      this.trigger.authNeededFired = true;
+    }
   }
 
   private onAuthNeeded(e: AuthNeededEvent) {
     logTrace(this, `Received authNeeded event`);
 
-    const settingsGameData = this.sp.settings["skymp5-client"]["gameData"] as any;
-    const isOfflineMode = Number.isInteger(settingsGameData?.profileId);
-    if (isOfflineMode) {
-      logTrace(this, `Offline mode detected in settings, emitting auth event with authGameData.local`);
-      this.controller.emitter.emit("authAttempt", { authGameData: { local: { profileId: settingsGameData.profileId } } });
-    } else {
-      logTrace(this, `No offline mode detectted in settings, regular auth needed`);
-      this.setListenBrowserMessage(true, 'authNeeded event received');
+    const managed = this.sp.settings["skymp5-client"]["launchMode"] === "directory-managed";
+    authData = this.readAuthDataFromDisk();
+    if (managed && authData?.session) {
+      logTrace(this, "Using launcher-provided Directory session");
+      this.controller.emitter.emit("authAttempt", { authGameData: { remote: authData } });
+      this.authAttemptProgressIndicator = true;
+      return;
+    }
 
-      this.trigger.authNeededFired = true;
-      if (this.trigger.conditionMet) {
-        this.onBrowserWindowLoadedAndOnlineAuthNeeded();
-      }
+    browserState.loginFailedReason = "Dieser Client muss über einen aktuellen SkyMP Launcher gestartet werden.";
+    browserState.comment = "This client must be started through a current SkyMP Launcher.";
+    this.setListenBrowserMessage(true, "launcher-managed runtime data is missing");
+    this.trigger.authNeededFired = true;
+    if (this.trigger.conditionMet) {
+      this.onBrowserWindowLoadedAndOnlineAuthNeeded();
     }
   }
 
@@ -185,10 +190,6 @@ export class AuthService extends ClientListener {
     }
 
     switch (msgContent["customPacketType"]) {
-      // case 'loginRequired':
-      //   logTrace(this, 'loginRequired received');
-      //   this.loginWithSkympIoCredentials();
-      //   break;
       case 'loginFailedNotLoggedViaDiscord':
         this.authAttemptProgressIndicator = false;
         this.controller.lookupListener(NetworkingService).close();
@@ -233,28 +234,15 @@ export class AuthService extends ClientListener {
   }
 
   private onBrowserWindowLoadedAndOnlineAuthNeeded() {
-    if (!this.isListenBrowserMessage) {
+    if (!this.isListenBrowserMessage()) {
       logError(this, `isListenBrowserMessage was false for some reason, aborting auth`);
       return;
     }
 
-    logTrace(this, `Showing widgets and starting loop`);
-
-    authData = this.readAuthDataFromDisk();
+    logTrace(this, "Showing launcher-required message");
     this.refreshWidgets();
     this.sp.browser.setVisible(true);
     this.sp.browser.setFocused(true);
-
-    const timersService = this.controller.lookupListener(TimersService);
-
-    logTrace(this, "Calling setTimeout for testing");
-    try {
-      timersService.setTimeout(() => {
-        logTrace(this, "Test timeout fired");
-      }, 1);
-    } catch (e) {
-      logError(this, "Failed to call setTimeout");
-    }
   }
 
   private onBrowserMessage(e: BrowserMessageEvent) {
@@ -263,19 +251,14 @@ export class AuthService extends ClientListener {
       return;
     }
 
-    const settingsService = this.controller.lookupListener(SettingsService);
-
     logTrace(this, `onBrowserMessage:`, JSON.stringify(e.arguments));
 
     const eventKey = e.arguments[0];
     switch (eventKey) {
       case events.openDiscordOauth:
-        browserState.comment = strings.openingBrowser;
+        browserState.loginFailedReason = "Dieser Client muss über einen aktuellen SkyMP Launcher gestartet werden.";
+        browserState.comment = "Discord login is handled by the launcher.";
         this.refreshWidgets();
-        this.sp.win32.loadUrl(`${settingsService.getMasterUrl()}/api/users/login-discord?state=${this.discordAuthState}`);
-
-        // Launch checkLoginState loop
-        this.checkLoginState();
         break;
       case events.authAttempt:
         if (authData === null) {
@@ -314,95 +297,6 @@ export class AuthService extends ClientListener {
     }
   }
 
-  private createPlaySession(token: string, callback: (res: string, err: string) => void) {
-    const settingsService = this.controller.lookupListener(SettingsService);
-    const client = new this.sp.HttpClient(settingsService.getMasterUrl());
-
-    const route = `/api/users/me/play/${settingsService.getServerMasterKey()}`;
-    logTrace(this, `Creating play session ${route}`);
-
-    client.post(route, {
-      body: '{}',
-      contentType: 'application/json',
-      headers: {
-        'authorization': token,
-      },
-      // @ts-ignore
-    }, (res) => {
-      if (res.status != 200) {
-        callback('', 'status code ' + res.status);
-      } else {
-        // TODO: handle JSON.parse failure?
-        callback(JSON.parse(res.body).session, '');
-      }
-    });
-  }
-
-  private checkLoginState() {
-    if (!this.isListenBrowserMessage) {
-      logTrace(this, `checkLoginState: isListenBrowserMessage was false, aborting check`);
-      return;
-    }
-
-    const settingsService = this.controller.lookupListener(SettingsService);
-    const timersService = this.controller.lookupListener(TimersService);
-
-    // Social engineering protection, don't show the full state
-    const halfDiscordAuthState = this.discordAuthState.slice(0, 16);
-
-    logTrace(this, `Checking login state`, halfDiscordAuthState, '...');
-
-    new this.sp.HttpClient(settingsService.getMasterUrl())
-      .get("/api/users/login-discord/status?state=" + this.discordAuthState, undefined,
-        // @ts-ignore
-        (response) => {
-          switch (response.status) {
-            case 200:
-              const {
-                token,
-                masterApiId,
-                discordUsername,
-                discordDiscriminator,
-                discordAvatar,
-              } = JSON.parse(response.body) as MasterApiAuthStatus;
-              browserState.failCount = 0;
-              this.createPlaySession(token, (playSession, error) => {
-                if (error) {
-                  browserState.failCount = 0;
-                  browserState.comment = (error);
-                  timersService.setTimeout(() => this.checkLoginState(), Math.floor((1.5 + Math.random() * 2) * 1000));
-                  this.refreshWidgets();
-                  return;
-                }
-                authData = {
-                  session: playSession,
-                  masterApiId,
-                  discordUsername,
-                  discordDiscriminator,
-                  discordAvatar,
-                };
-                browserState.comment = strings.linkedSuccessfully;
-                this.refreshWidgets();
-              });
-              break;
-            case 401: // Unauthorized
-              browserState.failCount = 0;
-              browserState.comment = '';//(`Still waiting...`);
-              timersService.setTimeout(() => this.checkLoginState(), Math.floor((1.5 + Math.random() * 2) * 1000));
-              break;
-            case 403: // Forbidden
-            case 404: // Not found
-              browserState.failCount = 9000;
-              browserState.comment = (`Fail: ${response.body}`);
-              break;
-            default:
-              ++browserState.failCount;
-              browserState.comment = `Server returned ${response.status.toString() || "???"} "${response.body || response.error}"`;
-              timersService.setTimeout(() => this.checkLoginState(), Math.floor((1.5 + Math.random() * 2) * 1000));
-          }
-        });
-  };
-
   private refreshWidgets() {
     this.sp.browser.executeJavaScript(new FunctionInfo(this.browsersideWidgetSetter).getText({ events, browserState, authData: authData, strings }));
     this.authDialogOpen = true;
@@ -420,7 +314,17 @@ export class AuthService extends ClientListener {
         return null;
       }
 
-      return JSON.parse(data.slice(2)) || null;
+      const parsed = JSON.parse(data.slice(2)) as Partial<RemoteAuthGameData> | null;
+      if (
+        !parsed ||
+        typeof parsed.session !== "string" ||
+        !parsed.session ||
+        !Number.isInteger(parsed.profileId)
+      ) {
+        logError(this, "Launcher auth data is malformed");
+        return null;
+      }
+      return parsed as RemoteAuthGameData;
     } catch (e) {
       logError(this, `Error reading`, this.pluginAuthDataName, `from disk:`, e, `, falling back to null`);
       return null;
@@ -553,7 +457,7 @@ export class AuthService extends ClientListener {
             authData ? (
               authData.discordUsername
                 ? `${authData.discordUsername}`
-                : `id: ${authData.masterApiId}`
+                : `id: ${authData.profileId}`
             ) : strings.notAuthorized
           ),
           tags: [/*"ELEMENT_SAME_LINE", "ELEMENT_STYLE_MARGIN_EXTENDED"*/],
@@ -616,7 +520,7 @@ export class AuthService extends ClientListener {
       const message: CustomPacketMessage = {
         t: MsgType.CustomPacket,
         contentJsonDump: JSON.stringify({
-          customPacketType: 'loginWithSkympIo',
+          customPacketType: 'loginWithLauncherSession',
           gameData: {
             profileId: authData.local.profileId,
           },
@@ -630,11 +534,11 @@ export class AuthService extends ClientListener {
     }
 
     if (authData?.remote) {
-      logTrace(this, 'Logging in as a master API user');
+      logTrace(this, 'Logging in with a launcher-provided backend session');
       const message: CustomPacketMessage = {
         t: MsgType.CustomPacket,
         contentJsonDump: JSON.stringify({
-          customPacketType: 'loginWithSkympIo',
+          customPacketType: 'loginWithLauncherSession',
           gameData: {
             session: authData.remote.session,
           },
@@ -715,7 +619,6 @@ export class AuthService extends ClientListener {
       return this.authNeededFired && this.browserWindowLoadedFired
     }
   };
-  private discordAuthState = crypto.randomBytes(32).toString('hex');
   private authDialogOpen = false;
 
   private loggingStartMoment = 0;

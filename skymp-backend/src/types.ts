@@ -22,7 +22,7 @@ export interface BackendConfig {
   };
   server: {
     id: string;
-    masterKeyEnv: string;
+    internalTokenEnv: string;
     name: string;
     description: string;
     region: string;
@@ -32,6 +32,7 @@ export interface BackendConfig {
     maxPlayers: number;
     visibility: 'public' | 'private';
     versions?: Record<string, string>;
+    access?: { discordGuild?: { required: boolean; guildId?: string; inviteUrl?: string } };
   };
   supervisor: {
     command: string;
@@ -47,7 +48,7 @@ export interface BackendConfig {
       windowMs: number;
     };
   };
-  sessions: { issuerTokenEnv: string; ttlSeconds: number };
+  sessions: { ttlSeconds: number; directoryPublicKey?: string; clockSkewMs?: number };
   modules: ModuleSelection[];
 }
 
@@ -62,10 +63,11 @@ export interface ModuleSelection {
 export interface ModuleManifest {
   id: string;
   version: string;
-  coreApiVersion: string;
+  coreContract: 'managed-backend';
   dependencies: string[];
   entryPoint: string;
   configSchema?: Record<string, unknown>;
+  capabilities?: Array<'news' | 'mods' | 'metrics' | 'clientDistribution' | 'modpack'>;
 }
 
 export interface Logger {
@@ -81,6 +83,8 @@ export interface Storage {
   getSession(token: string): Promise<SessionRecord | null>;
   putSession(record: SessionRecord): Promise<void>;
   revokeSession(token: string): Promise<void>;
+  getOrCreateProfile(discordId: string, username: string): Promise<number>;
+  consumeGrant(jti: string, expiresAt: number): Promise<boolean>;
   getModuleValue(namespace: string, key: string): Promise<unknown>;
   putModuleValue(namespace: string, key: string, value: unknown): Promise<void>;
   deleteModuleValue(namespace: string, key: string): Promise<void>;
@@ -94,6 +98,7 @@ export interface SessionRecord {
   discordId?: string;
   roles: string[];
   expiresAt: number;
+  profileId: number;
 }
 
 export interface RuntimeStatus {

@@ -1,6 +1,6 @@
 export interface RemoteAuthGameData {
   session: string;
-  masterApiId: number;
+  profileId: number;
   discordUsername: string | null;
   discordDiscriminator: string | null;
   discordAvatar: string | null;

@@ -6,12 +6,20 @@ import type { RuntimeState } from './runtime-state.js';
 import { RouterRegistry } from './module-router.js';
 import { DirectoryConnector } from './modules/directory-connector.js';
 
-interface LockFile { coreApiVersion: string; modules: Record<string, string> }
+interface LockFile { coreContract: 'managed-backend'; modules: Record<string, string> }
 
 export class ModuleLoader {
   readonly routers = new RouterRegistry();
   readonly services = new Map<string, unknown>();
   private readonly started: BackendModule[] = [];
+
+  get capabilities(): ReadonlySet<string> {
+    return new Set(
+      this.started
+        .flatMap((module) => module.manifest.capabilities ?? [])
+        .filter((capability) => this.routers.hasLauncherCapability(capability)),
+    );
+  }
 
   constructor(
     private readonly config: BackendConfig,
@@ -94,7 +102,7 @@ export class ModuleLoader {
   }
 
   private validateManifest(manifest: ModuleManifest, lock: LockFile): void {
-    if (manifest.coreApiVersion !== lock.coreApiVersion) throw new Error(`Module ${manifest.id} requires core API ${manifest.coreApiVersion}; core provides ${lock.coreApiVersion}`);
+    if (manifest.coreContract !== lock.coreContract) throw new Error(`Module ${manifest.id} requires core contract ${manifest.coreContract}; core provides ${lock.coreContract}`);
     if (lock.modules[manifest.id] !== manifest.version) throw new Error(`Module ${manifest.id}@${manifest.version} is not pinned in modules.lock.json`);
   }
 

@@ -24,19 +24,29 @@ export class SqliteStorage implements Storage {
         username TEXT NOT NULL,
         discord_id TEXT,
         roles_json TEXT NOT NULL,
-        expires_at INTEGER NOT NULL
+        expires_at INTEGER NOT NULL,
+        profile_id INTEGER
       );
       CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
       CREATE TABLE IF NOT EXISTS module_kv (
         namespace TEXT NOT NULL, key TEXT NOT NULL, value_json TEXT NOT NULL,
         PRIMARY KEY(namespace, key)
       );
+      CREATE TABLE IF NOT EXISTS profiles (
+        profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        discord_id TEXT UNIQUE NOT NULL, username TEXT NOT NULL, updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS consumed_grants (
+        jti TEXT PRIMARY KEY, expires_at INTEGER NOT NULL
+      );
     `);
+    const sessionColumns = this.database.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+    if (!sessionColumns.some((column) => column.name === 'profile_id')) this.database.exec('ALTER TABLE sessions ADD COLUMN profile_id INTEGER');
   }
 
   async getSession(token: string): Promise<SessionRecord | null> {
     const row = this.database.prepare(
-      'SELECT user_id, username, discord_id, roles_json, expires_at FROM sessions WHERE token_hash = ?',
+      'SELECT user_id, username, discord_id, roles_json, expires_at, profile_id FROM sessions WHERE token_hash = ?',
     ).get(tokenHash(token)) as Record<string, unknown> | undefined;
     if (!row || Number(row.expires_at) <= Date.now()) {
       if (row) this.database.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash(token));
@@ -49,22 +59,34 @@ export class SqliteStorage implements Storage {
       discordId: row.discord_id ? String(row.discord_id) : undefined,
       roles: JSON.parse(String(row.roles_json)) as string[],
       expiresAt: Number(row.expires_at),
+      profileId: Number(row.profile_id ?? row.user_id),
     };
   }
 
   async putSession(record: SessionRecord): Promise<void> {
     this.database.prepare(`
-      INSERT INTO sessions(token_hash, user_id, username, discord_id, roles_json, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions(token_hash, user_id, username, discord_id, roles_json, expires_at, profile_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(token_hash) DO UPDATE SET
         user_id=excluded.user_id, username=excluded.username,
         discord_id=excluded.discord_id, roles_json=excluded.roles_json,
-        expires_at=excluded.expires_at
-    `).run(tokenHash(record.token), record.userId, record.username, record.discordId ?? null, JSON.stringify(record.roles), record.expiresAt);
+        expires_at=excluded.expires_at, profile_id=excluded.profile_id
+    `).run(tokenHash(record.token), record.userId, record.username, record.discordId ?? null, JSON.stringify(record.roles), record.expiresAt, record.profileId);
   }
 
   async revokeSession(token: string): Promise<void> {
     this.database.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash(token));
+  }
+  async getOrCreateProfile(discordId: string, username: string): Promise<number> {
+    this.database.prepare(`INSERT INTO profiles(discord_id,username,updated_at) VALUES(?,?,?)
+      ON CONFLICT(discord_id) DO UPDATE SET username=excluded.username,updated_at=excluded.updated_at`).run(discordId, username, Date.now());
+    const row = this.database.prepare('SELECT profile_id FROM profiles WHERE discord_id=?').get(discordId) as { profile_id: number };
+    return Number(row.profile_id);
+  }
+  async consumeGrant(jti: string, expiresAt: number): Promise<boolean> {
+    this.database.prepare('DELETE FROM consumed_grants WHERE expires_at<=?').run(Date.now());
+    try { this.database.prepare('INSERT INTO consumed_grants VALUES(?,?)').run(jti, expiresAt); return true; }
+    catch (cause) { if (cause instanceof Error && /UNIQUE|constraint/i.test(cause.message)) return false; throw cause; }
   }
   async getModuleValue(namespace: string, key: string): Promise<unknown> {
     const row = this.database.prepare('SELECT value_json FROM module_kv WHERE namespace=? AND key=?').get(namespace, key) as { value_json: string } | undefined;
@@ -93,7 +115,11 @@ class PostgresStorage implements Storage {
   async migrate(): Promise<void> {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, username TEXT NOT NULL,
-      discord_id TEXT, roles_json JSONB NOT NULL, expires_at BIGINT NOT NULL);
+      discord_id TEXT, roles_json JSONB NOT NULL, expires_at BIGINT NOT NULL, profile_id INTEGER);
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS profile_id INTEGER;
+      CREATE TABLE IF NOT EXISTS profiles (
+        profile_id SERIAL PRIMARY KEY, discord_id TEXT UNIQUE NOT NULL, username TEXT NOT NULL, updated_at BIGINT NOT NULL);
+      CREATE TABLE IF NOT EXISTS consumed_grants (jti TEXT PRIMARY KEY, expires_at BIGINT NOT NULL);
       CREATE TABLE IF NOT EXISTS module_kv (
         namespace TEXT NOT NULL, key TEXT NOT NULL, value_json JSONB NOT NULL,
         PRIMARY KEY(namespace, key))`);
@@ -102,14 +128,24 @@ class PostgresStorage implements Storage {
     const result = await this.pool.query('SELECT * FROM sessions WHERE token_hash = $1 AND expires_at > $2', [tokenHash(token), Date.now()]);
     const row = result.rows[0];
     if (!row) return null;
-    return { token, userId: row.user_id, username: row.username, discordId: row.discord_id ?? undefined, roles: row.roles_json, expiresAt: Number(row.expires_at) };
+    return { token, userId: row.user_id, username: row.username, discordId: row.discord_id ?? undefined, roles: row.roles_json, expiresAt: Number(row.expires_at), profileId: Number(row.profile_id ?? row.user_id) };
   }
   async putSession(record: SessionRecord): Promise<void> {
-    await this.pool.query(`INSERT INTO sessions VALUES ($1,$2,$3,$4,$5,$6)
-      ON CONFLICT(token_hash) DO UPDATE SET user_id=$2,username=$3,discord_id=$4,roles_json=$5,expires_at=$6`,
-    [tokenHash(record.token), record.userId, record.username, record.discordId ?? null, JSON.stringify(record.roles), record.expiresAt]);
+    await this.pool.query(`INSERT INTO sessions(token_hash,user_id,username,discord_id,roles_json,expires_at,profile_id) VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT(token_hash) DO UPDATE SET user_id=$2,username=$3,discord_id=$4,roles_json=$5,expires_at=$6,profile_id=$7`,
+    [tokenHash(record.token), record.userId, record.username, record.discordId ?? null, JSON.stringify(record.roles), record.expiresAt, record.profileId]);
   }
   async revokeSession(token: string): Promise<void> { await this.pool.query('DELETE FROM sessions WHERE token_hash = $1', [tokenHash(token)]); }
+  async getOrCreateProfile(discordId: string, username: string): Promise<number> {
+    const result = await this.pool.query(`INSERT INTO profiles(discord_id,username,updated_at) VALUES($1,$2,$3)
+      ON CONFLICT(discord_id) DO UPDATE SET username=$2,updated_at=$3 RETURNING profile_id`, [discordId, username, Date.now()]);
+    return Number(result.rows[0].profile_id);
+  }
+  async consumeGrant(jti: string, expiresAt: number): Promise<boolean> {
+    await this.pool.query('DELETE FROM consumed_grants WHERE expires_at <= $1', [Date.now()]);
+    const result = await this.pool.query('INSERT INTO consumed_grants VALUES($1,$2) ON CONFLICT DO NOTHING', [jti, expiresAt]);
+    return result.rowCount === 1;
+  }
   async getModuleValue(namespace: string, key: string): Promise<unknown> {
     const result = await this.pool.query('SELECT value_json FROM module_kv WHERE namespace=$1 AND key=$2', [namespace, key]);
     return result.rows[0]?.value_json ?? null;

@@ -8,24 +8,25 @@
     "publicApi": { "$ref": "#/$defs/listener" },
     "internalApi": { "$ref": "#/$defs/listener" },
     "database": {
-      "type": "object", "required": ["adapter"],
+      "type": "object", "additionalProperties": false, "required": ["adapter"],
       "properties": { "adapter": { "enum": ["sqlite", "postgres"] }, "path": { "type": "string" }, "connectionStringEnv": { "type": "string" } }
     },
     "server": {
-      "type": "object", "required": ["id", "masterKeyEnv", "name", "description", "region", "tags", "publicBackendUrl", "gameAddress", "maxPlayers", "visibility"],
+      "type": "object", "additionalProperties": false, "required": ["id", "internalTokenEnv", "name", "description", "region", "tags", "publicBackendUrl", "gameAddress", "maxPlayers", "visibility"],
       "properties": {
-        "id": { "type": "string" }, "masterKeyEnv": { "type": "string" }, "name": { "type": "string" },
+        "id": { "type": "string" }, "internalTokenEnv": { "type": "string" }, "name": { "type": "string" },
         "description": { "type": "string" }, "region": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } },
         "publicBackendUrl": { "type": "string", "format": "uri" }, "gameAddress": { "type": "string" }, "maxPlayers": { "type": "integer", "minimum": 1 },
-        "visibility": { "enum": ["public", "private"] }, "versions": { "type": "object", "additionalProperties": { "type": "string" } }
+        "visibility": { "enum": ["public", "private"] }, "versions": { "type": "object", "additionalProperties": { "type": "string" } },
+        "access": { "type": "object", "additionalProperties": false, "properties": { "discordGuild": { "type": "object", "additionalProperties": false, "required": ["required"], "properties": { "required": { "type": "boolean" }, "guildId": { "type": "string" }, "inviteUrl": { "type": "string", "format": "uri" } } } } }
       }
     },
     "supervisor": { "type": "object" },
-    "sessions": { "type": "object" },
+    "sessions": { "type": "object", "additionalProperties": false, "required": ["ttlSeconds"], "properties": { "ttlSeconds": { "type": "integer", "minimum": 1 }, "directoryPublicKey": { "type": "string" }, "clockSkewMs": { "type": "integer", "minimum": 0 } } },
     "modules": { "type": "array", "items": { "$ref": "#/$defs/module" } }
   },
   "$defs": {
-    "listener": { "type": "object", "required": ["host", "port"], "properties": { "host": { "type": "string" }, "port": { "type": "integer", "minimum": 1, "maximum": 65535 } } },
-    "module": { "type": "object", "required": ["id", "enabled", "required"], "properties": { "id": { "type": "string" }, "enabled": { "type": "boolean" }, "required": { "type": "boolean" }, "path": { "type": "string" }, "config": { "type": "object" } } }
+    "listener": { "type": "object", "additionalProperties": false, "required": ["host", "port"], "properties": { "host": { "type": "string" }, "port": { "type": "integer", "minimum": 1, "maximum": 65535 } } },
+    "module": { "type": "object", "additionalProperties": false, "required": ["id", "enabled", "required"], "properties": { "id": { "type": "string" }, "enabled": { "type": "boolean" }, "required": { "type": "boolean" }, "path": { "type": "string" }, "config": { "type": "object" } } }
   }
 }

@@ -1,5 +1,5 @@
 {
   "lockfileVersion": 1,
-  "coreApiVersion": "1",
+  "coreContract": "managed-backend",
   "modules": { "directory-connector": "0.1.0" }
 }

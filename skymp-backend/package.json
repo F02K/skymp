@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test test/*.test.mjs"
+    "test": "npm run check:api-contract && npm run build && node --test test/*.test.mjs",
+    "check:api-contract": "node ../scripts/check-api-contract.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

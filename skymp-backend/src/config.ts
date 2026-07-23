@@ -40,8 +40,10 @@ export function validateConfig(config: BackendConfig): void {
   );
   assert(config.database?.adapter === 'sqlite' || config.database?.adapter === 'postgres', 'database.adapter must be sqlite or postgres');
   assert(config.database.adapter !== 'sqlite' || Boolean(config.database.path), 'database.path is required for sqlite');
+  assert(!('masterKeyEnv' in (config.server ?? {})), 'server.masterKeyEnv is unsupported; use server.internalTokenEnv');
+  assert(!('issuerTokenEnv' in (config.sessions ?? {})), 'sessions.issuerTokenEnv is unsupported; sessions are issued only from Directory grants');
   assert(Boolean(config.server?.id), 'server.id is required');
-  assert(Boolean(config.server?.masterKeyEnv), 'server.masterKeyEnv is required');
+  assert(Boolean(config.server?.internalTokenEnv), 'server.internalTokenEnv is required');
   assert(Boolean(config.server?.name), 'server.name is required');
   const address = config.server?.gameAddress?.match(/^(?:\[[^\]]+]|[^:]+):(\d+)$/);
   assert(address && Number(address[1]) >= 1 && Number(address[1]) <= 65535, 'server.gameAddress must be host:port with a valid port');
@@ -52,6 +54,18 @@ export function validateConfig(config: BackendConfig): void {
   positiveInteger(config.supervisor.shutdownTimeoutMs, 'supervisor.shutdownTimeoutMs');
   positiveInteger(config.supervisor.restart.maxAttempts, 'supervisor.restart.maxAttempts');
   positiveInteger(config.sessions?.ttlSeconds, 'sessions.ttlSeconds');
+  if (config.sessions.directoryPublicKey) {
+    let decoded: Buffer;
+    try { decoded = Buffer.from(config.sessions.directoryPublicKey, 'base64'); } catch { decoded = Buffer.alloc(0); }
+    assert(decoded.length > 32, 'sessions.directoryPublicKey must be a base64-encoded Ed25519 SPKI key');
+  }
+  const guild = config.server.access?.discordGuild;
+  if (guild?.required) assert(Boolean(guild.guildId && /^\d{5,30}$/.test(guild.guildId)), 'server.access.discordGuild.guildId is required');
+  if (guild?.inviteUrl) {
+    let invite: URL;
+    try { invite = new URL(guild.inviteUrl); } catch { throw new Error('Invalid backend config: server.access.discordGuild.inviteUrl is invalid'); }
+    assert(invite.protocol === 'https:' && ['discord.gg', 'discord.com'].includes(invite.hostname), 'server.access.discordGuild.inviteUrl must use discord.gg or discord.com');
+  }
   assert(Array.isArray(config.modules), 'modules must be an array');
   const ids = config.modules.map((module) => module.id);
   assert(new Set(ids).size === ids.length, 'module IDs must be unique');

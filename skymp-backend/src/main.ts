@@ -16,8 +16,7 @@ function configArgument(): string {
 async function main(): Promise<void> {
   const logger = createLogger({ component: 'core' });
   const config = loadConfig(configArgument());
-  const masterKey = requireSecret(config.server.masterKeyEnv);
-  const issuerToken = requireSecret(config.sessions.issuerTokenEnv);
+  const internalToken = requireSecret(config.server.internalTokenEnv);
   const storage = createStorage(config.database);
   const state = new RuntimeState(config.server.maxPlayers);
   const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -49,7 +48,7 @@ async function main(): Promise<void> {
     state.setState('starting');
     await storage.migrate();
     await modules.start();
-    apis = await startApis({ config, storage, state, logger, masterKey, issuerToken, routers: modules.routers });
+    apis = await startApis({ config, storage, state, logger, internalToken, routers: modules.routers, capabilities: modules.capabilities });
     supervisor = new Supervisor(config.supervisor, state, logger.child({ component: 'supervisor' }));
     await supervisor.start();
   } catch (cause) {
