@@ -23,11 +23,16 @@ export class LoadOrderVerificationService extends ClientListener {
 
   private verifyLoadOrder() {
     const settingsService = this.controller.lookupListener(SettingsService);
+    if (settingsService.isLauncherManaged()) {
+      printConsole('Load order verification is managed by the SkyMP Launcher preflight.');
+      this.resetText();
+      return;
+    }
 
     this.resetText();
     const clientMods = this.getClientMods();
     this.printModOrder('Client load order:', clientMods);
-    return settingsService.getServerMods()
+    return Promise.resolve([] as Mod[])
       .then((serverMods) => {
         this.printModOrder('Server load order:', serverMods);
         if (clientMods.length < serverMods.length) {

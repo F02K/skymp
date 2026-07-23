@@ -1,7 +1,6 @@
 import { System, Log } from "./system";
 import Axios from "axios";
 import { SystemContext } from "./system";
-import { Settings } from "../settings";
 
 export class MasterApiBalanceSystem implements System {
     systemName = "MasterApiBalanceSystem";
@@ -9,9 +8,10 @@ export class MasterApiBalanceSystem implements System {
     constructor(
         private log: Log,
         private maxPlayers: number,
-        private masterUrl: string | null,
+        private backendUrl: string,
         private serverPort: number,
-        private masterKey: string,
+        private serverId: string,
+        private backendToken: string,
         private offlineMode: boolean) { 
             this.sessionByUserId = new Array<string | undefined>(this.maxPlayers);
         }
@@ -23,9 +23,7 @@ export class MasterApiBalanceSystem implements System {
         };
         ctx.gm.on("userAssignSession", listenerFn);
 
-        this.log(
-            `MasterApiBalanceSystem system assumed that ${this.masterKey} is our address on master`,
-        );
+        this.log(`MasterApiBalanceSystem uses managed backend server ${this.serverId}`);
 
         // Effectively makes mp.getUserMasterApiBalance & mp.makeUserMasterApiPurchase a part of gamemode API
         (ctx.svr as any).getUserMasterApiBalance = async (userId: number): Promise<number> => {
@@ -59,7 +57,8 @@ export class MasterApiBalanceSystem implements System {
     private async getUserBalanceImpl(session: string): Promise<number> {
         try {
             const response = await Axios.get(
-                `${this.masterUrl}/api/servers/${this.masterKey}/sessions/${session}/balance`,
+                `${this.backendUrl}/api/internal/servers/${encodeURIComponent(this.serverId)}/sessions/${encodeURIComponent(session)}/balance`,
+                { headers: { Authorization: `Bearer ${this.backendToken}` } },
             );
             if (!response.data || !response.data.user || !response.data.user.id || typeof response.data.user.balance !== "number") {
                 throw new Error(`getUserBalanceImpl: bad master-api response ${JSON.stringify(response.data)}`);
@@ -72,17 +71,10 @@ export class MasterApiBalanceSystem implements System {
 
     private async makeUserMasterApiPurchaseImpl(session: string, balanceToSpend: number): Promise<{ balanceSpent: number, success: boolean }> {
         try {
-            const settings = await Settings.get();
-            const authToken = settings.allSettings.masterApiAuthToken;
-
-            if (typeof authToken !== "string" || !authToken) {
-                throw new Error(`Bad masterApiAuthToken setting: ${authToken}`);
-            }
-
             const response = await Axios.post(
-                `${this.masterUrl}/api/servers/${this.masterKey}/sessions/${session}/purchase`,
+                `${this.backendUrl}/api/internal/servers/${encodeURIComponent(this.serverId)}/sessions/${encodeURIComponent(session)}/purchases`,
                 { balanceToSpend },
-                { headers: { 'X-Auth-Token': authToken } }
+                { headers: { Authorization: `Bearer ${this.backendToken}` } }
             );
             if (!response.data || typeof response.data.balanceSpent !== "number" || typeof response.data.success !== "boolean") {
                 throw new Error(`makeUserMasterApiPurchaseImpl: bad master-api response ${JSON.stringify(response.data)}`);

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,45 +13,81 @@ import { SqliteStorage } from '../dist/storage.js';
 import { Supervisor } from '../dist/supervisor.js';
 import { DirectoryConnector } from '../dist/modules/directory-connector.js';
 import { ModuleLoader } from '../dist/module-loader.js';
+import { canonicalPlayGrant } from '../dist/directory-auth.js';
 
 function config(root) {
   return {
     publicApi: { host: '127.0.0.1', port: 0 }, internalApi: { host: '127.0.0.1', port: 0 },
     database: { adapter: 'sqlite', path: join(root, 'backend.sqlite') },
-    server: { id: 'test', masterKeyEnv: 'TEST_MASTER', name: 'Test', description: '', region: 'test', tags: [], publicBackendUrl: 'http://127.0.0.1', gameAddress: '127.0.0.1:7777', maxPlayers: 10, visibility: 'private' },
+    server: { id: 'test', internalTokenEnv: 'TEST_BACKEND_TOKEN', name: 'Test', description: '', region: 'test', tags: [], publicBackendUrl: 'http://127.0.0.1', gameAddress: '127.0.0.1:7777', maxPlayers: 10, visibility: 'private' },
     supervisor: { command: process.execPath, args: [], cwd: root, readyTimeoutMs: 3000, shutdownTimeoutMs: 1000, restart: { enabled: false, initialDelayMs: 10, maxDelayMs: 100, maxAttempts: 2, windowMs: 1000 } },
-    sessions: { issuerTokenEnv: 'TEST_ISSUER', ttlSeconds: 60 }, modules: [],
+    sessions: { ttlSeconds: 60 }, modules: [],
   };
 }
 
 test('configuration keeps the internal API loopback-only and secrets are redacted', () => {
   const item = config('.'); item.publicApi.port = 3000; item.internalApi.port = 3001; item.internalApi.host = '0.0.0.0';
   assert.throws(() => validateConfig(item), /loopback-only/);
-  assert.deepEqual(sanitize({ credential: 'secret', nested: { masterKey: 'value' }, safe: 'ok' }), { credential: '[REDACTED]', nested: { masterKey: '[REDACTED]' }, safe: 'ok' });
+  assert.deepEqual(sanitize({ credential: 'secret', nested: { internalToken: 'value' }, safe: 'ok' }), { credential: '[REDACTED]', nested: { internalToken: '[REDACTED]' }, safe: 'ok' });
+  const legacyServer = config('.'); legacyServer.publicApi.port = 3000; legacyServer.internalApi.port = 3001; legacyServer.server.masterKeyEnv = 'OLD_TOKEN';
+  assert.throws(() => validateConfig(legacyServer), /masterKeyEnv is unsupported/);
+  const legacySessions = config('.'); legacySessions.publicApi.port = 3000; legacySessions.internalApi.port = 3001; legacySessions.sessions.issuerTokenEnv = 'OLD_ISSUER';
+  assert.throws(() => validateConfig(legacySessions), /issuerTokenEnv is unsupported/);
 });
 
-test('legacy SkyMP heartbeat and session validation use only the internal listener', async () => {
+test('SkyMP heartbeat and session validation use only the unversioned internal API', async () => {
   const root = await mkdtemp(join(tmpdir(), 'skymp-backend-api-'));
   const item = config(root); const storage = new SqliteStorage(item.database.path); await storage.migrate();
   const state = new RuntimeState(10); const logger = createLogger({ test: true });
-  const apis = await startApis({ config: item, storage, state, logger, masterKey: 'master', issuerToken: 'issuer-token', routers: new RouterRegistry() });
+  const apis = await startApis({ config: item, storage, state, logger, internalToken: 'master', routers: new RouterRegistry() });
   const publicPort = apis.publicServer.address().port; const internalPort = apis.internalServer.address().port;
-  const issued = await fetch(`http://127.0.0.1:${publicPort}/api/v2/auth/sessions`, { method: 'POST', headers: { authorization: 'Bearer issuer-token', 'content-type': 'application/json' }, body: JSON.stringify({ userId: '42', username: 'Player', roles: ['member'] }) });
-  assert.equal(issued.status, 201); const session = await issued.json();
-  const valid = await fetch(`http://127.0.0.1:${internalPort}/api/servers/master/sessions/${session.token}`);
+  const session = { token: 'session-token', userId: '42', username: 'Player', roles: ['member'], expiresAt: Date.now() + 60000, profileId: 42 };
+  await storage.putSession(session);
+  const valid = await fetch(`http://127.0.0.1:${internalPort}/api/internal/servers/test/sessions/${session.token}`, { headers: { authorization: 'Bearer master' } });
   assert.equal(valid.status, 200); assert.equal((await valid.json()).user.username, 'Player');
-  const heartbeat = await fetch(`http://127.0.0.1:${internalPort}/api/servers/master`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ online: 3, maxPlayers: 10 }) });
+  const heartbeat = await fetch(`http://127.0.0.1:${internalPort}/api/internal/servers/test/heartbeat`, { method: 'POST', headers: { authorization: 'Bearer master', 'content-type': 'application/json' }, body: JSON.stringify({ online: 3, maxPlayers: 10 }) });
   assert.equal(heartbeat.status, 200); assert.equal(state.get().online, 3);
-  assert.equal((await fetch(`http://127.0.0.1:${publicPort}/api/servers/master/sessions/${session.token}`)).status, 404);
+  assert.equal((await fetch(`http://127.0.0.1:${publicPort}/api/internal/servers/test/sessions/${session.token}`, { headers: { authorization: 'Bearer master' } })).status, 404);
+  assert.equal((await fetch(`http://127.0.0.1:${internalPort}/api/servers/master/sessions/${session.token}`)).status, 404);
+  assert.equal((await fetch(`http://127.0.0.1:${publicPort}/api/launcher/servers`)).status, 404);
+  assert.equal((await fetch(`http://127.0.0.1:${publicPort}/api/v2/launcher/servers/test`)).status, 404);
+  await Promise.all([stopServer(apis.publicServer), stopServer(apis.internalServer)]); await storage.close(); await rm(root, { recursive: true, force: true });
+});
+
+test('directory grants are audience-bound, one-time and map Discord users to stable numeric profiles without leaking master keys', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skymp-backend-grant-'));
+  const item = config(root); const keys = generateKeyPairSync('ed25519');
+  item.sessions.directoryPublicKey = createPublicKey(keys.privateKey).export({ format: 'der', type: 'spki' }).toString('base64');
+  const storage = new SqliteStorage(item.database.path); await storage.migrate(); const state = new RuntimeState(10);
+  const apis = await startApis({ config: item, storage, state, logger: createLogger({ test: true }), internalToken: 'never-public', routers: new RouterRegistry(), capabilities: new Set() });
+  const publicPort = apis.publicServer.address().port; const internalPort = apis.internalServer.address().port;
+  const makeGrant = (jti = randomUUID(), audience = 'test') => {
+    const issuedAt = Date.now();
+    const grant = { schemaVersion: 1, jti, audience, issuedAt, expiresAt: issuedAt + 60000, identity: { discordId: '123456789012345678', username: 'Directory Player' }, membership: { guildId: '987654321098765432', roles: ['member'] } };
+    return { grant, signature: sign(null, Buffer.from(canonicalPlayGrant(grant)), keys.privateKey).toString('base64url') };
+  };
+  const firstBody = makeGrant();
+  const first = await fetch(`http://127.0.0.1:${publicPort}/api/auth/directory/exchange`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(firstBody) });
+  assert.equal(first.status, 201); const firstSession = await first.json(); assert.equal(typeof firstSession.profileId, 'number');
+  const replay = await fetch(`http://127.0.0.1:${publicPort}/api/auth/directory/exchange`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(firstBody) });
+  assert.equal(replay.status, 409); assert.equal((await replay.json()).error.code, 'playGrantReplayed');
+  const second = await fetch(`http://127.0.0.1:${publicPort}/api/auth/directory/exchange`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(makeGrant()) });
+  assert.equal(second.status, 201); assert.equal((await second.json()).profileId, firstSession.profileId);
+  const wrongAudience = await fetch(`http://127.0.0.1:${publicPort}/api/auth/directory/exchange`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(makeGrant(randomUUID(), 'another-server')) });
+  assert.equal(wrongAudience.status, 403);
+  const detail = await (await fetch(`http://127.0.0.1:${publicPort}/api/launcher/servers/test`, { headers: { authorization: `Bearer ${firstSession.session}` } })).json();
+  assert.equal(detail.masterKey, undefined); assert.equal(detail.masterKeyEnv, undefined); assert.equal(detail.capabilities.metrics, false); assert.equal(detail.capabilities.news, false); assert.equal(detail.access.allowed, true);
+  const internal = await (await fetch(`http://127.0.0.1:${internalPort}/api/internal/servers/test/sessions/${firstSession.session}`, { headers: { authorization: 'Bearer never-public' } })).json();
+  assert.equal(internal.user.id, firstSession.profileId); assert.deepEqual(internal.user.roles, ['member']);
   await Promise.all([stopServer(apis.publicServer), stopServer(apis.internalServer)]); await storage.close(); await rm(root, { recursive: true, force: true });
 });
 
 test('supervisor waits for a real heartbeat and shuts down its child', async () => {
   const root = await mkdtemp(join(tmpdir(), 'skymp-supervisor-')); const item = config(root);
   const storage = new SqliteStorage(item.database.path); await storage.migrate(); const state = new RuntimeState(10);
-  const apis = await startApis({ config: item, storage, state, logger: createLogger({ test: true }), masterKey: 'master', issuerToken: 'issuer-token', routers: new RouterRegistry() });
+  const apis = await startApis({ config: item, storage, state, logger: createLogger({ test: true }), internalToken: 'master', routers: new RouterRegistry() });
   const port = apis.internalServer.address().port;
-  item.supervisor.args = ['-e', `setInterval(()=>fetch('http://127.0.0.1:${port}/api/servers/master',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({online:1,maxPlayers:10})}),50)`];
+  item.supervisor.args = ['-e', `setInterval(()=>fetch('http://127.0.0.1:${port}/api/internal/servers/test/heartbeat',{method:'POST',headers:{authorization:'Bearer master','content-type':'application/json'},body:JSON.stringify({online:1,maxPlayers:10})}),50)`];
   const supervisor = new Supervisor(item.supervisor, state, createLogger({ test: true })); await supervisor.start();
   await new Promise((resolve, reject) => { const timeout = setTimeout(() => reject(new Error('not ready')), 2000); state.on('status', (value) => { if (value.state === 'online') { clearTimeout(timeout); resolve(); } }); });
   assert.equal(state.get().state, 'online'); assert.ok(state.get().childPid);
@@ -74,7 +111,7 @@ test('directory connector is fail-open when directory is unavailable', async () 
   process.env.TEST_DIRECTORY_CREDENTIAL = 'credential';
   const module = new DirectoryConnector(config('.').server);
   const state = new RuntimeState(10);
-  await module.start({ config: { url: 'http://127.0.0.1:1', serverId: 'test', credentialEnv: 'TEST_DIRECTORY_CREDENTIAL', heartbeatIntervalMs: 10000 }, logger: createLogger({ test: true }), events: state, getStatus: () => state.get(), getSecret: (name) => process.env[name], services: new Map(), router: { add() {} }, database: { get: async () => null, set: async () => {}, delete: async () => {}, migrate: async () => {} } });
+  await module.start({ config: { url: 'http://127.0.0.1:1', credentialEnv: 'TEST_DIRECTORY_CREDENTIAL', heartbeatIntervalMs: 10000 }, logger: createLogger({ test: true }), events: state, getStatus: () => state.get(), getSecret: (name) => process.env[name], services: new Map(), router: { add() {} }, database: { get: async () => null, set: async () => {}, delete: async () => {}, migrate: async () => {} } });
   await module.stop(); delete process.env.TEST_DIRECTORY_CREDENTIAL;
 });
 
@@ -89,4 +126,26 @@ test('optional module failure is isolated while a required module blocks startup
   const required = new ModuleLoader(item, state, createLogger({ test: true }), lockPath, storage);
   await assert.rejects(required.start(), /Required module missing-module/);
   await storage.close(); await rm(root, { recursive: true, force: true });
+});
+
+test('capabilities require every standard launcher endpoint', async () => {
+  const routers = new RouterRegistry();
+  const moduleRouter = routers.create('distribution');
+  moduleRouter.add('GET', '/launcher/news', () => ({ body: { items: [] } }));
+  moduleRouter.add('GET', '/launcher/client/manifest', () => ({ body: { version: 'test' } }));
+
+  assert.equal(routers.hasLauncherCapability('news'), true);
+  assert.equal(routers.hasLauncherCapability('clientDistribution'), false);
+
+  moduleRouter.add('GET', '/launcher/client/download', () => ({ body: { archive: true } }));
+  assert.equal(routers.hasLauncherCapability('clientDistribution'), true);
+  assert.deepEqual(
+    await routers.dispatchLauncher('/launcher/client/manifest', {
+      method: 'GET',
+      path: '/api/launcher/servers/test/client/manifest',
+      headers: {},
+      body: {},
+    }),
+    { body: { version: 'test' } },
+  );
 });

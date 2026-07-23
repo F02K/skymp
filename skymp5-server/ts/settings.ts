@@ -17,11 +17,16 @@ export interface DiscordAuthSettings {
   guilds: DiscordGuildConfig[];
 }
 
+export interface BackendSettings {
+  url: string;
+  serverId: string;
+  tokenEnv: string;
+}
+
 export class Settings {
-  masterKey: string | null = null;
+  backend: BackendSettings | null = null;
   port = 7777;
   maxPlayers = 100;
-  master: string = "https://gateway.skymp.net";
   name = 'Yet Another Server';
   gamemodePath = '...';
   loadOrder = new Array<string>();
@@ -60,11 +65,13 @@ export class Settings {
     }
 
     const settings = await fetchServerSettings();
+    if ('master' in settings || 'masterKey' in settings) {
+      throw new Error('Legacy master/masterKey settings are unsupported; configure backend.url, backend.serverId and backend.tokenEnv');
+    }
     [
-      'masterKey',
+      'backend',
       'port',
       'maxPlayers',
-      'master',
       'name',
       'gamemodePath',
       'loadOrder',
@@ -77,6 +84,13 @@ export class Settings {
         (this as Record<string, unknown>)[prop] = settings[prop];
       }
     });
+
+    if (!this.backend || typeof this.backend.url !== 'string' || typeof this.backend.serverId !== 'string' || typeof this.backend.tokenEnv !== 'string') {
+      throw new Error('backend.url, backend.serverId and backend.tokenEnv are required');
+    }
+    if (!process.env[this.backend.tokenEnv]) {
+      throw new Error(`Backend token environment variable ${this.backend.tokenEnv} is not set`);
+    }
 
     this.allSettings = settings;
   }

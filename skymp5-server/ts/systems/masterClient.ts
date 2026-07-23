@@ -9,24 +9,18 @@ export class MasterClient implements System {
   constructor(
     private log: Log,
     private serverPort: number,
-    private masterUrl: string | null,
+    private backendUrl: string,
     private maxPlayers: number,
     private name: string,
-    private masterKey: string,
+    private serverId: string,
+    private backendToken: string,
     private updateIntervalMs = 5000,
     private offlineMode = false
   ) { }
 
   async initAsync(): Promise<void> {
-    if (!this.masterUrl) {
-      this.log("No master server specified");
-      return;
-    }
-
-    this.log(`Using master server on ${this.masterUrl}`);
-
-    this.endpoint = `${this.masterUrl}/api/servers/${this.masterKey}`;
-    this.log(`Our endpoint on master is ${this.endpoint}`);
+    this.log(`Using managed backend on ${this.backendUrl}`);
+    this.endpoint = `${this.backendUrl}/api/internal/servers/${encodeURIComponent(this.serverId)}/heartbeat`;
   }
 
   update(): void {
@@ -44,9 +38,11 @@ export class MasterClient implements System {
       const { name, maxPlayers } = this;
       const online = this.getCurrentOnline(ctx.svr);
       try {
-        await Axios.post(this.endpoint, { name, maxPlayers, online });
+        await Axios.post(this.endpoint, { name, maxPlayers, online }, {
+          headers: { Authorization: `Bearer ${this.backendToken}` },
+        });
       } catch (e) {
-        console.error(`Error updating info on master server: ${e}`);
+        console.error(`Error updating info on managed backend: ${e}`);
       }
     }
   }

@@ -60,18 +60,20 @@ const setupStreams = (scampNative: any) => {
 const main = async () => {
   const settingsObject = await Settings.get();
   const {
-    port, master, maxPlayers, name, masterKey, offlineMode, gamemodePath
+    port, backend, maxPlayers, name, offlineMode, gamemodePath
   } = settingsObject;
+  if (!backend) throw new Error("Managed backend configuration is required");
+  const backendToken = process.env[backend.tokenEnv]!;
 
   const log = console.log;
   const systems = new Array<System>();
   systems.push(
     new MetricsSystem(),
-    new MasterClient(log, port, master, maxPlayers, name, masterKey, 5000, offlineMode),
+    new MasterClient(log, port, backend.url, maxPlayers, name, backend.serverId, backendToken, 5000, offlineMode),
     new Spawn(log),
-    new Login(log, maxPlayers, master, port, masterKey, offlineMode),
+    new Login(log, maxPlayers, backend.url, port, backend.serverId, backendToken, offlineMode),
     new DiscordBanSystem(),
-    new MasterApiBalanceSystem(log, maxPlayers, master, port, masterKey, offlineMode),
+    new MasterApiBalanceSystem(log, maxPlayers, backend.url, port, backend.serverId, backendToken, offlineMode),
   );
 
   setupStreams(scampNative.getScampNative());

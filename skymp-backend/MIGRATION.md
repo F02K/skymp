@@ -1,27 +1,21 @@
-# Frostfall backend migration
+# Managed backend cutover
 
-The managed core intentionally starts with the minimum connection preset. It
-already carries the v2 error envelope, hashed play sessions, legacy SkyMP
-heartbeat/session routes, separate public/internal listeners, SQLite and
-PostgreSQL storage, the supervisor, and the version-pinned module host.
+SkyMP uses the managed backend as its operator-owned integration layer.
+Discovery and Discord OAuth belong to the mandatory SkyMP Directory. A launcher
+requests a server-bound play grant from the Directory and exchanges it at the
+selected backend. The backend then exposes the verified profile to SkyMP through
+its authenticated loopback listener.
 
-The existing Frostfall backend remains the source for Discord OAuth, access
-policies, signed client distribution and project-specific features until each
-is moved behind this module API. Recommended extraction order:
+The cutover is intentionally strict:
 
-1. Discord identity and access services.
-2. Client distribution and launcher updates.
-3. Admin dashboard, relay, GitHub deployment and observability.
-4. Frostfall-specific content, factions and economy.
+1. Directory descriptors must declare `contract: "directory-managed"`.
+2. Public and internal HTTP endpoints live only below `/api`.
+3. Launcher sessions use `Authorization: Bearer`.
+4. SkyMP identifies a backend by public server ID and sends the internal token
+   in the same header.
+5. Optional capabilities are advertised only after their module has started and
+   registered the standard handler.
 
-During migration, operators should keep the existing service for routes not
-implemented by the minimal core. Do not archive Frostfall-Backend until its
-chosen modules are running against production data and the launcher contract
-tests pass. Gameplay behavior remains in gamemode plugins; only external
-integrations belong in backend modules.
-
-Planned official module IDs are `discord-identity`, `discord-roles`,
-`admin-dashboard`, `client-distribution`, `launcher-updates`, `news-rules`,
-`factions-economy`, `websocket-relay`, `github-deployment`, `observability`,
-`backups-notifications`, and `legacy-compatibility`. They are deliberately not
-enabled or remotely installed by the core.
+Frostfall-Backend is deprecated and frozen. New integrations belong in
+version-pinned managed-backend modules. Gameplay behavior remains in gamemode
+plugins.

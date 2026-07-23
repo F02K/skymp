@@ -3,15 +3,14 @@ import type { BackendConfig, BackendModule, ModuleContext } from '../types.js';
 
 interface DirectoryConfig {
   url?: string;
-  serverId: string;
   credentialEnv: string;
   heartbeatIntervalMs?: number;
 }
 
 export class DirectoryConnector implements BackendModule {
   readonly manifest = {
-    id: 'directory-connector', version: '0.1.0', coreApiVersion: '1', dependencies: [], entryPoint: 'builtin',
-    configSchema: { type: 'object', required: ['serverId', 'credentialEnv'], properties: { url: { type: 'string' }, serverId: { type: 'string' }, credentialEnv: { type: 'string' }, heartbeatIntervalMs: { type: 'number' } } },
+    id: 'directory-connector', version: '0.1.0', coreContract: 'managed-backend' as const, dependencies: [], entryPoint: 'builtin',
+    configSchema: { type: 'object', required: ['credentialEnv'], properties: { url: { type: 'string' }, credentialEnv: { type: 'string' }, heartbeatIntervalMs: { type: 'number' } } },
   };
   private timer?: NodeJS.Timeout;
   private context?: ModuleContext;
@@ -22,7 +21,7 @@ export class DirectoryConnector implements BackendModule {
   async start(context: ModuleContext): Promise<void> {
     this.context = context;
     const config = context.config as unknown as DirectoryConfig;
-    if (!config.serverId || !config.credentialEnv) throw new Error('Directory connector requires serverId and credentialEnv');
+    if (!config.credentialEnv) throw new Error('Directory connector requires credentialEnv');
     if (!context.getSecret(config.credentialEnv)) throw new Error(`Directory credential ${config.credentialEnv} is not set`);
     await this.send().catch((cause) => context.logger.warn('Initial directory heartbeat failed; continuing fail-open', { cause: String(cause) }));
     this.timer = setInterval(() => void this.send().catch((cause) => context.logger.warn('Directory heartbeat failed', { cause: String(cause) })), config.heartbeatIntervalMs ?? 15000);
@@ -37,17 +36,19 @@ export class DirectoryConnector implements BackendModule {
     const status = this.context.getStatus();
     const body = JSON.stringify({
       descriptor: {
+        contract: 'directory-managed',
         name: this.server.name, description: this.server.description, region: this.server.region,
         tags: this.server.tags, publicBackendUrl: this.server.publicBackendUrl,
         gameAddress: this.server.gameAddress, visibility: this.server.visibility,
         versions: this.server.versions ?? {}, maxPlayers: status.maxPlayers,
+        access: this.server.access ?? { discordGuild: { required: false } },
       },
       status: { state: status.state, online: status.online, maxPlayers: status.maxPlayers },
     });
     const timestamp = String(Date.now());
     const signature = createHmac('sha256', credential).update(`${timestamp}.${body}`).digest('base64url');
     const directoryUrl = config.url ?? 'https://skyservers.online';
-    const response = await fetch(`${directoryUrl.replace(/\/$/, '')}/v1/servers/${encodeURIComponent(config.serverId)}/heartbeat`, {
+    const response = await fetch(`${directoryUrl.replace(/\/$/, '')}/api/servers/${encodeURIComponent(this.server.id)}/heartbeat`, {
       method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${credential}`, 'x-skymp-timestamp': timestamp, 'x-skymp-signature': signature }, body,
       signal: AbortSignal.timeout(5000),
     });
