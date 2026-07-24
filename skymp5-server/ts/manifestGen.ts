@@ -16,11 +16,12 @@ interface Manifest {
 }
 
 const getBsaNameByEspmName = (espmName: string) => {
-  if (espmName.endsWith(".esp") || espmName.endsWith(".esm")) {
+  const extension = path.extname(espmName).toLowerCase();
+  if (extension === ".esp" || extension === ".esm" || extension === ".esl") {
     const nameNoExt = espmName.split(".").slice(0, -1).join(".");
     return nameNoExt + ".bsa";
   }
-  throw new Error(`'${espmName}' is not a valid esp or esm name`);
+  throw new Error(`'${espmName}' is not a valid esp, esm or esl name`);
 };
 
 export const generateManifest = (settings: Settings): void => {
@@ -47,7 +48,7 @@ export const generateManifest = (settings: Settings): void => {
     });
 
     const bsaName = getBsaNameByEspmName(espmName);
-    const bsaPath = path.join(settings.dataDir, bsaName);
+    const bsaPath = path.join(path.dirname(espmPath), bsaName);
     if (fs.existsSync(bsaPath)) {
       const buf: Uint8Array = fs.readFileSync(bsaPath);
       manifest.mods.push({

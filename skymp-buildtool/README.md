@@ -13,11 +13,14 @@ skymp-buildtool.cmd configure --profile developer
 skymp-buildtool.cmd build --profile release --parallel 8 --test
 skymp-buildtool.cmd build --target unit
 skymp-buildtool.cmd test --suite unit --filter Respawn
+skymp-buildtool.cmd test --suite server
 skymp-buildtool.cmd package managed-server
+skymp-buildtool.cmd package client-pack path\to\staging build\packs\my-server.zip
 skymp-buildtool.cmd setup managed-server
 skymp-buildtool.cmd run managed-server
 skymp-buildtool.cmd run managed-server --setup
 skymp-buildtool.cmd setup managed-server --server-name "My Server" --game-port 7777 --directory-url https://skyservers.online
+skymp-buildtool.cmd setup managed-server --server-name "My Server" --client-pack build\packs\server.zip --client-port 7779
 ```
 
 Use `skymp-buildtool.cmd --help` for the complete command list.
@@ -58,3 +61,22 @@ targets and require `--yes` outside the interactive UI.
 
 Command output is streamed and retained under `build/logs/skymp-buildtool/`.
 Direct CMake, CTest and `build.sh` workflows remain supported.
+
+## Server Client Packs
+
+`package client-pack` creates a byte-reproducible, store-only ZIP from an
+already bundled staging directory. The directory must contain
+`client-pack.json` and
+`Platform/Plugins/skymp-server-extension.js`. Optional files may live only
+under `Platform/UI`, `Platform/Fonts` or `Platform/ServerAssets`.
+
+The extension entry point registers API version 1 through
+`globalThis.registerServerExtension({ id, apiVersion: 1, activate })`. To be
+independent of Skyrim Platform plugin load order, a bundle may queue its
+definition before the core loads:
+
+```js
+const definition = { id: "example", apiVersion: 1, activate(context) { /* ... */ } };
+if (globalThis.registerServerExtension) globalThis.registerServerExtension(definition);
+else (globalThis.__skympServerExtensionQueue ??= []).push(definition);
+```

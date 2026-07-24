@@ -1,8 +1,10 @@
 import { timingSafeEqual } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { BackendConfig, Logger, Storage } from './types.js';
 import type { RuntimeState } from './runtime-state.js';
 import { GrantError, verifyDirectoryGrant } from './directory-auth.js';
+import type { ClientPackService } from './client-pack.js';
 
 const json = (res: ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -41,8 +43,9 @@ export async function startApis(options: {
   state: RuntimeState;
   logger: Logger;
   internalToken: string;
+  clientPack?: ClientPackService;
 }) {
-  const { config, storage, state, logger, internalToken } = options;
+  const { config, storage, state, logger, internalToken, clientPack } = options;
   const internalServer = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
@@ -102,7 +105,111 @@ export async function startApis(options: {
   await new Promise<void>((resolve, reject) =>
     internalServer.listen(config.internalApi.port, config.internalApi.host, resolve).once('error', reject));
   logger.info('Loopback managed backend listener started', { internalApi: config.internalApi });
-  return { internalServer };
+
+  let clientPackServer: import('node:http').Server | undefined;
+  if (clientPack) {
+    const listener = clientPack.config;
+    clientPackServer = createServer((req, res) => {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      if (req.method === 'GET' && url.pathname === '/api/client-pack/manifest') {
+        const body = clientPack.manifestBytes();
+        const etag = `"${clientPack.descriptor()!.manifestSha256}"`;
+        if (req.headers['if-none-match'] === etag) {
+          res.writeHead(304, { etag, 'cache-control': 'public, max-age=60, immutable' });
+          return res.end();
+        }
+        res.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'content-length': String(body.length),
+          etag,
+          'cache-control': 'public, max-age=60, immutable',
+          'x-content-type-options': 'nosniff',
+        });
+        return res.end(body);
+      }
+      if ((req.method === 'GET' || req.method === 'HEAD')
+        && url.pathname === '/api/client-pack/archive') {
+        return serveClientPackArchive(req, res, clientPack);
+      }
+      return error(res, 404, 'notFound', 'Route not found.');
+    });
+    try {
+      await new Promise<void>((resolve, reject) =>
+        clientPackServer!.listen(listener.port, listener.host, resolve).once('error', reject));
+    } catch (cause) {
+      await stopServer(internalServer);
+      throw cause;
+    }
+    logger.info('Public Client Pack listener started', {
+      host: listener.host,
+      port: listener.port,
+      manifestSha256: clientPack.descriptor()?.manifestSha256,
+    });
+  }
+  return { internalServer, clientPackServer };
+}
+
+function serveClientPackArchive(
+  req: IncomingMessage,
+  res: ServerResponse,
+  clientPack: ClientPackService,
+): void {
+  const size = clientPack.archiveSize;
+  const etag = `"${clientPack.archiveSha256}"`;
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, { etag, 'cache-control': 'public, max-age=31536000, immutable' });
+    res.end();
+    return;
+  }
+  const range = req.headers.range;
+  let start = 0;
+  let end = size - 1;
+  let status = 200;
+  if (range !== undefined) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (!match || (!match[1] && !match[2])) {
+      res.writeHead(416, { 'content-range': `bytes */${size}` });
+      res.end();
+      return;
+    }
+    if (!match[1]) {
+      const suffix = Number(match[2]);
+      if (!Number.isSafeInteger(suffix) || suffix < 1) {
+        res.writeHead(416, { 'content-range': `bytes */${size}` });
+        res.end();
+        return;
+      }
+      start = Math.max(0, size - suffix);
+    } else {
+      start = Number(match[1]);
+      end = match[2] ? Number(match[2]) : end;
+    }
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)
+      || start < 0 || start >= size || end < start) {
+      res.writeHead(416, { 'content-range': `bytes */${size}` });
+      res.end();
+      return;
+    }
+    end = Math.min(end, size - 1);
+    status = 206;
+  }
+  const headers: Record<string, string> = {
+    'content-type': 'application/zip',
+    'content-length': String(end - start + 1),
+    'accept-ranges': 'bytes',
+    etag,
+    'cache-control': 'public, max-age=31536000, immutable',
+    'x-content-type-options': 'nosniff',
+  };
+  if (status === 206) headers['content-range'] = `bytes ${start}-${end}/${size}`;
+  res.writeHead(status, headers);
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
+  const stream = createReadStream(clientPack.archivePath, { start, end });
+  stream.once('error', () => res.destroy());
+  stream.pipe(res);
 }
 
 function matchesServer(config: BackendConfig, encodedId: string): boolean {

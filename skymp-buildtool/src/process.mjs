@@ -73,12 +73,13 @@ export async function runLogged(command, args = [], options = {}) {
   options.onOutput?.(`$ ${commandLine}\n`);
 
   return await new Promise((resolvePromise, reject) => {
+    const inheritStdio = options.inheritStdio === true;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
       windowsHide: true,
       shell: false,
-      stdio: ["inherit", "pipe", "pipe"],
+      stdio: inheritStdio ? "inherit" : ["inherit", "pipe", "pipe"],
     });
     const recent = [];
     const diagnosticLines = [];
@@ -97,8 +98,10 @@ export async function runLogged(command, args = [], options = {}) {
       }
       options.onOutput?.(text);
     };
-    child.stdout.on("data", (chunk) => consume(chunk, process.stdout));
-    child.stderr.on("data", (chunk) => consume(chunk, process.stderr));
+    if (!inheritStdio) {
+      child.stdout.on("data", (chunk) => consume(chunk, process.stdout));
+      child.stderr.on("data", (chunk) => consume(chunk, process.stderr));
+    }
 
     const interrupt = () => {
       if (!child.killed) child.kill("SIGINT");

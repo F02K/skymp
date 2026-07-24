@@ -109,6 +109,7 @@ async function dispatchTuiAction(terminal, configuration, action) {
       { id: "all", label: "All CTest suites" },
       { id: "unit", label: "C++ unit tests" },
       { id: "backend", label: "Managed backend" },
+      { id: "server", label: "Server TypeScript" },
       { id: "gamemode-compiler", label: "Gamemode compiler" },
       { id: "buildtool", label: "Buildtool" },
     ], "Select test suite");
@@ -148,6 +149,11 @@ async function dispatchTuiAction(terminal, configuration, action) {
     }
     return;
   }
+  if (action === "setup-managed") {
+    await runInForeground(terminal, "Set up managed server", (processOptions) =>
+      setupAction("managed-server", { processOptions }));
+    return;
+  }
 
   const handlers = {
     doctor: (processOptions) => doctorAction(configuration, {
@@ -158,7 +164,6 @@ async function dispatchTuiAction(terminal, configuration, action) {
     build: (processOptions) => buildAction(configuration, { processOptions }),
     "build-test": (processOptions) => buildAction(configuration, { test: true, processOptions }),
     package: (processOptions) => packageAction(configuration, "managed-server", { processOptions }),
-    "setup-managed": (processOptions) => setupAction("managed-server", { processOptions }),
     "run-server": (processOptions) => runAction("server", { processOptions }),
     "run-managed": (processOptions) => runAction("managed-server", { processOptions }),
   };
@@ -227,6 +232,27 @@ async function runWithLogView(terminal, title, operation) {
     terminal.setRaw(true);
   }
   await showMessage(terminal, [...lines, "", "Press any key to continue."].join("\n"), false);
+}
+
+async function runInForeground(terminal, title, operation) {
+  terminal.leave();
+  // TerminalSession keeps stdin flowing for menu key presses. Pause the parent
+  // stream so an interactive child with inherited stdin receives the input.
+  stdin.pause();
+  stdout.write(`\n${colors.cyan}${title}${colors.reset}\n\n`);
+  try {
+    await operation({ display: true, inheritStdio: true });
+    stdout.write(`\n${colors.green}Completed successfully.${colors.reset}\n`);
+  } catch (error) {
+    stdout.write(`\n${colors.red}${formatActionError(error)}${colors.reset}\n`);
+  }
+  const readline = createInterface({ input: stdin, output: stdout });
+  try {
+    await readline.question("\nPress Enter to return to the buildtool.");
+  } finally {
+    readline.close();
+    terminal.enter();
+  }
 }
 
 async function showMessage(terminal, message, renderTitle = true) {

@@ -4,6 +4,7 @@ import { Octokit } from '@octokit/rest';
 import { RequestError as OctokitRequestError } from '@octokit/request-error';
 import { ArgumentParser } from 'argparse';
 import lodash from 'lodash';
+import { applyManagedServerEnvironment } from './managedSettings.mjs';
 
 export interface DiscordGuildConfig {
   guildId: string;
@@ -23,6 +24,12 @@ export interface BackendSettings {
   tokenEnv: string;
 }
 
+export interface ClientPackSettings {
+  version: string;
+  manifestSha256: string;
+  clientApiVersion: 1;
+}
+
 export class Settings {
   backend: BackendSettings | null = null;
   port = 7777;
@@ -40,6 +47,7 @@ export class Settings {
     },
   ];
   discordAuth: DiscordAuthSettings | null = null;
+  clientPack: ClientPackSettings | null = null;
 
   allSettings: Record<string, unknown> | null = null;
 
@@ -64,7 +72,8 @@ export class Settings {
       this.gamemodePath = './gamemode.js';
     }
 
-    const settings = await fetchServerSettings();
+    const loadedSettings = await fetchServerSettings();
+    const { settings } = applyManagedServerEnvironment(loadedSettings, process.env);
     if (('master' in settings || 'masterKey' in settings) && settings.offlineMode !== true) {
       throw new Error('Legacy master/masterKey settings are unsupported; configure backend.url, backend.serverId and backend.tokenEnv');
     }
@@ -79,47 +88,12 @@ export class Settings {
       'startPoints',
       'offlineMode',
       'discordAuth',
+      'clientPack',
     ].forEach((prop) => {
-      if (settings[prop]) {
+      if (settings[prop] !== undefined) {
         (this as Record<string, unknown>)[prop] = settings[prop];
       }
     });
-
-    const managedBackendValues = [
-      process.env.SKYMP_BACKEND_URL,
-      process.env.SKYMP_BACKEND_SERVER_ID,
-      process.env.SKYMP_BACKEND_TOKEN_ENV,
-    ];
-    if (managedBackendValues.some(Boolean)) {
-      if (!managedBackendValues.every(Boolean)) {
-        throw new Error('Managed backend overrides require SKYMP_BACKEND_URL, SKYMP_BACKEND_SERVER_ID and SKYMP_BACKEND_TOKEN_ENV together');
-      }
-      this.backend = {
-        url: process.env.SKYMP_BACKEND_URL!,
-        serverId: process.env.SKYMP_BACKEND_SERVER_ID!,
-        tokenEnv: process.env.SKYMP_BACKEND_TOKEN_ENV!,
-      };
-    }
-    if (process.env.SKYMP_SERVER_NAME) this.name = process.env.SKYMP_SERVER_NAME;
-    if (process.env.SKYMP_SERVER_MAX_PLAYERS) {
-      const maxPlayers = Number(process.env.SKYMP_SERVER_MAX_PLAYERS);
-      if (!Number.isInteger(maxPlayers) || maxPlayers < 1) throw new Error('SKYMP_SERVER_MAX_PLAYERS must be a positive integer');
-      this.maxPlayers = maxPlayers;
-    }
-    if (process.env.SKYMP_SERVER_PORT) {
-      const port = Number(process.env.SKYMP_SERVER_PORT);
-      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('SKYMP_SERVER_PORT must be a valid port');
-      this.port = port;
-    }
-    if (process.env.SKYMP_GAMEMODE_PATH) this.gamemodePath = process.env.SKYMP_GAMEMODE_PATH;
-    if (process.env.SKYMP_DATA_DIRECTORY) this.dataDir = process.env.SKYMP_DATA_DIRECTORY;
-    if (process.env.SKYMP_LOAD_ORDER) {
-      const loadOrder = JSON.parse(process.env.SKYMP_LOAD_ORDER);
-      if (!Array.isArray(loadOrder) || !loadOrder.every((item) => typeof item === 'string')) {
-        throw new Error('SKYMP_LOAD_ORDER must be a JSON string array');
-      }
-      this.loadOrder = loadOrder;
-    }
 
     if (!this.offlineMode && (!this.backend || typeof this.backend.url !== 'string' || typeof this.backend.serverId !== 'string' || typeof this.backend.tokenEnv !== 'string')) {
       throw new Error('backend.url, backend.serverId and backend.tokenEnv are required');

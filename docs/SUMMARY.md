@@ -16,6 +16,7 @@
 ## Client Usage
 
 - [Client Installation](docs_client_installation.md)
+- [Authentication Flow](docs_authentication.md)
 
 ## Server Usage
 

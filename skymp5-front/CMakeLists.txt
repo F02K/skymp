@@ -13,7 +13,8 @@ if(BUILD_FRONT)
   set(FRONTEND_ZIP_URL "https://github.com/${FRONTEND_REPO}/archive/refs/heads/${FRONTEND_BRANCH}.zip")
   set(FRONTEND_ZIP_DEST "${CMAKE_BINARY_DIR}/frontend.zip")
   set(FRONTEND_ZIP_EXTRACT_DIR "${CMAKE_BINARY_DIR}/frontend-zip")
-  set(FRONTEND_JS_DEST_DIR "${CMAKE_BINARY_DIR}/dist/client/Data/Platform/UI")
+  set(FRONTEND_PACK_STAGING "${CMAKE_BINARY_DIR}/client-packs/skymp5-front")
+  set(FRONTEND_JS_DEST_DIR "${FRONTEND_PACK_STAGING}/Platform/UI")
 
   set(DEPLOY_BRANCH "$ENV{DEPLOY_BRANCH}")
   set(AUTO_MERGE_REPO "Pospelove/auto-merge-action")
@@ -35,11 +36,14 @@ if(BUILD_FRONT)
 
   add_custom_target(skymp5-front ALL
     SOURCES ${source}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/dist/client
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${FRONTEND_PACK_STAGING}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_CURRENT_LIST_DIR}/client-pack
+            ${FRONTEND_PACK_STAGING}
     COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_CURRENT_BINARY_DIR}/${FRONTEND_REPO_NAME}-${FRONTEND_BRANCH}
     COMMAND ${CMAKE_COMMAND} -E env DOWNLOAD_NO_PROGRESS=1
             ${CMAKE_COMMAND} -P ${CMAKE_BINARY_DIR}/${source}
-    COMMENT "Downloading & building frontend repo..."
+    COMMENT "Downloading and building skymp5-front as the reference Server Client Pack..."
   )
 else()
   add_custom_target(skymp5-front ALL

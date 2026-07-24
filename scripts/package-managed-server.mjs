@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { portableManagedServerSettings } from './managed-server-settings.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const backend = resolve(repository, 'skymp-backend');
@@ -9,6 +10,7 @@ const server = resolve(repository, 'build', 'dist', 'server');
 const target = resolve(server, 'backend');
 const staging = resolve(server, `.backend-staging-${process.pid}`);
 const compiler = resolve(backend, 'node_modules', 'typescript', 'bin', 'tsc');
+const serverSettingsPath = resolve(server, 'server-settings.json');
 
 const arguments_ = process.argv.slice(2);
 const skipBuild = arguments_.includes('--skip-build');
@@ -31,6 +33,10 @@ if (!skipBuild) {
   });
 }
 
+const serverSettings = portableManagedServerSettings(
+  JSON.parse(await readFile(serverSettingsPath, 'utf8')),
+);
+
 await rm(staging, { recursive: true, force: true });
 await mkdir(staging, { recursive: true });
 for (const name of ['dist', 'package.json', 'modules.lock.json', 'README.md', 'MIGRATION.md', 'backend.config.schema.json']) {
@@ -43,6 +49,12 @@ await writeFile(resolve(staging, 'backend.config.example.json'), `${JSON.stringi
 
 await rm(target, { recursive: true, force: true });
 await rename(staging, target);
+
+await writeFile(serverSettingsPath, `${JSON.stringify(serverSettings, null, 2)}\n`);
+await Promise.all([
+  rm(resolve(server, 'server-settings-dump.json'), { force: true }),
+  rm(resolve(server, 'server-settings-merged.json'), { force: true }),
+]);
 
 await writeFile(resolve(server, 'launch_managed_server.bat'), [
   '@echo off', 'setlocal', 'cd /d "%~dp0"',

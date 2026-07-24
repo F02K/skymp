@@ -12,6 +12,7 @@ export class Supervisor {
   private readonly pidPath: string;
   private pidHandle?: number;
   private childEnvironment: NodeJS.ProcessEnv = {};
+  private readonly outputBuffers = { stdout: '', stderr: '' };
 
   constructor(
     private readonly config: BackendConfig['supervisor'],
@@ -57,6 +58,8 @@ export class Supervisor {
     if (this.stopping) return;
     this.state.setState('starting');
     this.logger.info('Starting SkyMP child process', { command: this.config.command, args: this.config.args, cwd: this.config.cwd });
+    this.outputBuffers.stdout = '';
+    this.outputBuffers.stderr = '';
     const child = spawn(this.config.command, this.config.args, {
       cwd: this.config.cwd,
       env: { ...process.env, ...this.childEnvironment },
@@ -96,13 +99,22 @@ export class Supervisor {
   }
 
   private forward(stream: 'stdout' | 'stderr', chunk: Buffer): void {
-    for (const line of chunk.toString('utf8').split(/\r?\n/).filter(Boolean)) {
+    const lines = `${this.outputBuffers[stream]}${chunk.toString('utf8')}`.split(/\r?\n/);
+    this.outputBuffers[stream] = lines.pop() ?? '';
+    for (const line of lines.filter(Boolean)) {
       (stream === 'stderr' ? this.logger.warn : this.logger.info)(`skymp: ${line}`, { stream });
     }
   }
 
   private onExit(child: ChildProcess, code: number | null, signal: NodeJS.Signals | null): void {
     if (this.child !== child) return;
+    for (const stream of ['stdout', 'stderr'] as const) {
+      const line = this.outputBuffers[stream];
+      if (line) {
+        (stream === 'stderr' ? this.logger.warn : this.logger.info)(`skymp: ${line}`, { stream });
+        this.outputBuffers[stream] = '';
+      }
+    }
     this.child = undefined;
     this.state.setChildPid(undefined);
     if (this.stopping) {

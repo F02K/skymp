@@ -230,6 +230,17 @@ export class AuthService extends ClientListener {
         this.loggingStartMoment = 0;
         this.sp.browser.executeJavaScript(new FunctionInfo(this.loginFailedWidgetSetter).getText({ events, browserState, authData: authData, strings }));
         break;
+      case 'loginFailedClientPackRepairRequired':
+        this.authAttemptProgressIndicator = false;
+        this.controller.lookupListener(NetworkingService).close();
+        browserState.loginFailedReason = 'Repair required';
+        browserState.comment = typeof msgContent['reason'] === 'string'
+          ? msgContent['reason']
+          : 'The server Client Pack is missing or incompatible. Repair this server in Frostfall.';
+        this.setListenBrowserMessage(true, 'Client Pack repair required');
+        this.loggingStartMoment = 0;
+        this.sp.browser.executeJavaScript(new FunctionInfo(this.loginFailedWidgetSetter).getText({ events, browserState, authData: authData, strings }));
+        break;
     }
   }
 
@@ -541,6 +552,7 @@ export class AuthService extends ClientListener {
           customPacketType: 'loginWithLauncherSession',
           gameData: {
             session: authData.remote.session,
+            clientPack: this.launcherClientPack(),
           },
         }),
       };
@@ -553,6 +565,14 @@ export class AuthService extends ClientListener {
 
     logError(this, 'Not found authentication method');
   };
+
+  private launcherClientPack(): { version: string; manifestSha256: string } | null {
+    const settings = this.sp.settings['skymp5-client'];
+    const version = settings['client-pack-version'];
+    const manifestSha256 = settings['client-pack-manifest-sha256'];
+    if (typeof version !== 'string' || typeof manifestSha256 !== 'string') return null;
+    return { version, manifestSha256 };
+  }
 
   private onTick() {
     // TODO: Should be no hardcoded/magic-number limit

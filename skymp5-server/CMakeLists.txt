@@ -137,3 +137,15 @@ cmrc_add_resource_library(server_standard_scripts ${standard_scripts}
 )
 apply_default_settings(TARGETS server_standard_scripts)
 target_link_libraries(server_guest_lib PUBLIC server_standard_scripts)
+
+if(BUILD_UNIT_TESTS)
+  find_program(SKYMP5_SERVER_NODE_EXECUTABLE NAMES node.exe node REQUIRED)
+  file(GLOB SKYMP5_SERVER_TESTS CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/*.test.mjs
+  )
+  add_test(
+    NAME skymp5_server_typescript
+    COMMAND ${SKYMP5_SERVER_NODE_EXECUTABLE} --test ${SKYMP5_SERVER_TESTS}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  )
+endif()

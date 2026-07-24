@@ -34,7 +34,9 @@ export async function ensureBackendConfig(path: string, options: SetupOptions = 
   if (environment.SKYMP_MOD_SOURCE_DIRECTORY) {
     await copyServerMods(environment.SKYMP_MOD_SOURCE_DIRECTORY, resolve(configDirectory, template.server.dataDirectory));
   }
-  const discoveredPlugins = await discoverPlugins(resolve(configDirectory, template.server.dataDirectory));
+  const dataDirectory = resolve(configDirectory, template.server.dataDirectory);
+  await mkdir(dataDirectory, { recursive: true });
+  const discoveredPlugins = await discoverPlugins(dataDirectory);
   if (interactive) {
     await promptForPlugins(template, discoveredPlugins, input, output);
   } else {
@@ -74,6 +76,20 @@ export function applyBackendEnvironment(
   }
   if (environment.SKYMP_GAME_PORT) config.server.gamePort = parsePort(environment.SKYMP_GAME_PORT, 'SKYMP_GAME_PORT');
   if (environment.SKYMP_RESOURCES_PORT) config.server.resourcesPort = parsePort(environment.SKYMP_RESOURCES_PORT, 'SKYMP_RESOURCES_PORT');
+  const clientPackValues = [
+    environment.SKYMP_CLIENT_PACK_ARCHIVE,
+    environment.SKYMP_CLIENT_PACK_PORT,
+  ];
+  if (clientPackValues.some(Boolean)) {
+    if (!clientPackValues.every(Boolean)) {
+      throw new Error('SKYMP_CLIENT_PACK_ARCHIVE and SKYMP_CLIENT_PACK_PORT must be supplied together');
+    }
+    config.server.clientPack = {
+      archive: environment.SKYMP_CLIENT_PACK_ARCHIVE!,
+      host: '0.0.0.0',
+      port: parsePort(environment.SKYMP_CLIENT_PACK_PORT!, 'SKYMP_CLIENT_PACK_PORT'),
+    };
+  }
   if (environment.SKYMP_SERVER_HOSTNAME) config.server.hostname = environment.SKYMP_SERVER_HOSTNAME;
   if (environment.SKYMP_GAMEMODE) config.server.gamemode = environment.SKYMP_GAMEMODE;
   if (environment.SKYMP_DATA_DIRECTORY) config.server.dataDirectory = environment.SKYMP_DATA_DIRECTORY;
@@ -138,23 +154,29 @@ export async function copyServerMods(sourceDirectory: string, dataDirectory: str
 }
 
 export function portForwardingInstructions(config: BackendConfig): string {
-  return [
+  const lines = [
     'Network ports:',
     `  UDP ${config.server.gamePort} -> this machine (SkyMP game traffic)`,
     `  TCP ${config.server.resourcesPort} -> this machine (optional resources)`,
-    'The managed backend itself stays on loopback and must never be forwarded.',
-    '',
-  ].join('\n');
+  ];
+  if (config.server.clientPack) {
+    lines.push(`  TCP ${config.server.clientPack.port} -> this machine (public signed Client Pack)`);
+  }
+  lines.push('The internal managed backend listener stays on loopback and must never be forwarded.', '');
+  return lines.join('\n');
 }
 
 export async function attemptAutomaticPortMapping(
   config: BackendConfig,
   run: (command: string, args: string[]) => Promise<boolean> = runMapper,
 ): Promise<boolean> {
-  const mappings = [
+  const mappings: Array<[string, 'UDP' | 'TCP']> = [
     [String(config.server.gamePort), 'UDP'],
     [String(config.server.resourcesPort), 'TCP'],
-  ] as const;
+  ];
+  if (config.server.clientPack) {
+    mappings.push([String(config.server.clientPack.port), 'TCP']);
+  }
   let allMapped = true;
   for (const [port, protocol] of mappings) {
     const upnp = await run('upnpc', ['-a', '0.0.0.0', port, port, protocol]);
@@ -204,6 +226,25 @@ async function promptForServer(
     config.server.maxPlayers = parsePositive(await answer(prompt, 'Player limit', String(config.server.maxPlayers)), 'Player limit');
     config.server.gamePort = parsePort(await answer(prompt, 'UDP game port', String(config.server.gamePort)), 'Game port');
     config.server.resourcesPort = parsePort(await answer(prompt, 'TCP resources port', String(config.server.resourcesPort)), 'Resources port');
+    const clientPackArchive = await answer(
+      prompt,
+      'Client Pack ZIP (empty for none)',
+      config.server.clientPack?.archive ?? '',
+      true,
+    );
+    if (clientPackArchive) {
+      const clientPackPort = parsePort(
+        await answer(prompt, 'TCP Client Pack port', String(config.server.clientPack?.port ?? config.server.resourcesPort + 1)),
+        'Client Pack port',
+      );
+      config.server.clientPack = {
+        archive: clientPackArchive,
+        host: '0.0.0.0',
+        port: clientPackPort,
+      };
+    } else {
+      delete config.server.clientPack;
+    }
     const hostname = await answer(prompt, 'Public hostname (empty to use observed IP)', config.server.hostname ?? '', true);
     if (hostname) config.server.hostname = hostname;
     else delete config.server.hostname;
@@ -324,7 +365,7 @@ function assertNonInteractiveValues(config: BackendConfig, environment: NodeJS.P
   throw new Error([
     `Managed server setup needs these environment variables: ${missing.join(', ')}`,
     'Example: SKYMP_SERVER_NAME=My SkyMP Server',
-    'Optional: SKYMP_GAME_PORT=7777, SKYMP_RESOURCES_PORT=7778, SKYMP_DIRECTORY_URL=https://skyservers.online',
+    'Optional: SKYMP_GAME_PORT=7777, SKYMP_RESOURCES_PORT=7778, SKYMP_CLIENT_PACK_ARCHIVE=./pack.zip, SKYMP_CLIENT_PACK_PORT=7779',
   ].join('\n'));
 }
 
@@ -335,7 +376,7 @@ function migrateRemovedSettings(config: BackendConfig & Record<string, unknown>)
   delete server.gameAddress;
   if (!server.gamePort) server.gamePort = 7777;
   if (!server.resourcesPort) server.resourcesPort = 7778;
-  if (!server.gamemode) server.gamemode = 'default';
+  if (!server.gamemode || server.gamemode === 'default') server.gamemode = './gamemode.js';
   if (!server.dataDirectory) server.dataDirectory = './data';
   if (!Array.isArray(server.plugins)) server.plugins = [];
   if (!Array.isArray(server.loadOrder)) server.loadOrder = [];

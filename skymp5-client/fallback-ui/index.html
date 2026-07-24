@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkyMP</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: transparent; color: #f3eadc; }
+    #widgets { position: fixed; inset: 2rem; display: grid; align-content: end; gap: .6rem; pointer-events: none; }
+    .widget { max-width: 34rem; padding: .8rem 1rem; border: 1px solid #8f7655; background: rgba(15, 11, 8, .92); white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <main id="widgets" aria-live="polite"></main>
+  <script>
+    (() => {
+      const root = document.getElementById("widgets");
+      const render = (items) => {
+        root.replaceChildren(...(Array.isArray(items) ? items : []).map((item) => {
+          const node = document.createElement("section");
+          node.className = "widget";
+          node.textContent = [
+            item?.caption,
+            item?.text,
+            item?.content,
+            item?.hint,
+          ].filter((value) => typeof value === "string" && value).join("\n");
+          return node;
+        }));
+      };
+      window.skyrimPlatform ??= {};
+      window.skyrimPlatform.widgets ??= {};
+      window.skyrimPlatform.widgets.set = render;
+      window.setLanguage = () => {};
+    })();
+  </script>
+</body>
+</html>

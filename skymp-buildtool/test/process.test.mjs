@@ -30,6 +30,15 @@ test("logs success and reports failing process output", async () => {
   );
 });
 
+test("supports direct stdio inheritance for interactive child processes", async () => {
+  const result = await runLogged(process.execPath, ["-e", ""], {
+    label: "process-test-inherited-stdio",
+    display: false,
+    inheritStdio: true,
+  });
+  assert.equal(result.code, 0);
+});
+
 test("reports a missing executable", async () => {
   const result = await runCapture("definitely-not-a-real-skymp-command", []);
   assert.equal(result.code, null);

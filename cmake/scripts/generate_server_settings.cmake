@@ -1,7 +1,11 @@
 # Usage: "cmake -P generate_server_settings.cmake -DESM_PREFIX=<prefix_here> -DSERVER_SETTINGS_JSON_PATH=<path_to_server_settings.json> -DOFFLINE_MODE=<true_or_false>"
 
-# read current server-settings.json
-if(EXISTS "${SERVER_SETTINGS_JSON_PATH}")
+# Keep a non-packaged authoritative base for direct-server builds and
+# integration tests. Managed packaging may intentionally sanitize the copy
+# inside dist/server, which must not feed back into later CMake builds.
+if(SERVER_SETTINGS_BASE_JSON_PATH AND EXISTS "${SERVER_SETTINGS_BASE_JSON_PATH}")
+    file(READ "${SERVER_SETTINGS_BASE_JSON_PATH}" SERVER_SETTINGS_JSON)
+elseif(EXISTS "${SERVER_SETTINGS_JSON_PATH}")
     file(READ "${SERVER_SETTINGS_JSON_PATH}" SERVER_SETTINGS_JSON)
 else()
     set(SERVER_SETTINGS_JSON "{}")

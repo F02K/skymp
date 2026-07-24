@@ -1,6 +1,8 @@
 import { System, Log, Content, SystemContext } from "./system";
 import * as fetchRetry from "fetch-retry";
 import { loginsCounter, loginErrorsCounter } from "./metricsSystem";
+import type { ClientPackSettings } from "../settings";
+import { clientPackMatches } from "../clientPackCompatibility.mjs";
 
 const loginFailedBanned = JSON.stringify({ customPacketType: "loginFailedBanned" });
 const loginFailedSessionNotFound = JSON.stringify({ customPacketType: "loginFailedSessionNotFound" });
@@ -25,7 +27,8 @@ export class Login implements System {
     private serverPort: number,
     private serverId: string,
     private backendToken: string,
-    private offlineMode: boolean
+    private offlineMode: boolean,
+    private clientPack: ClientPackSettings | null,
   ) { }
 
   private getFetchOptions(callerFunctionName: string) {
@@ -96,6 +99,15 @@ export class Login implements System {
     if (this.offlineMode === true && gameData && gameData.session) {
       this.log("The server is in offline mode, the client is NOT");
     } else if (this.offlineMode === false && gameData && gameData.session) {
+      if (!clientPackMatches(this.clientPack, gameData.clientPack)) {
+        ctx.svr.sendCustomPacket(userId, JSON.stringify({
+          customPacketType: "loginFailedClientPackRepairRequired",
+          reason: "The required server Client Pack is missing or does not match. Repair this server in Frostfall.",
+          expected: this.clientPack,
+        }));
+        loginErrorsCounter.inc({ reason: "clientPackRepairRequired" });
+        return;
+      }
       (async () => {
         this.emit(ctx, "userAssignSession", userId, gameData.session);
 

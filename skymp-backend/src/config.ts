@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import type { BackendConfig } from './types.js';
 import { applyBackendEnvironment } from './setup.js';
 
@@ -19,7 +19,25 @@ export function loadConfig(path = 'backend.config.json'): BackendConfig {
   const root = dirname(absolutePath);
   config.supervisor.cwd = resolve(root, config.supervisor.cwd);
   if (config.database.path) config.database.path = resolve(root, config.database.path);
+  if (config.server.gamemode === 'default') config.server.gamemode = './gamemode.js';
+  config.server.gamemode = resolve(root, config.server.gamemode);
+  config.server.dataDirectory = resolve(root, config.server.dataDirectory);
+  if (config.server.clientPack) {
+    config.server.clientPack.archive = resolve(root, config.server.clientPack.archive);
+  }
   return config;
+}
+
+export function validateRuntimePaths(config: BackendConfig): void {
+  requirePath(config.server.dataDirectory, 'server.dataDirectory', true);
+  requirePath(config.server.gamemode, 'server.gamemode');
+  for (const entry of config.server.loadOrder) {
+    const path = isAbsolute(entry) ? entry : resolve(config.server.dataDirectory, entry);
+    requirePath(path, `server.loadOrder entry ${entry}`);
+  }
+  if (config.server.clientPack) {
+    requirePath(config.server.clientPack.archive, 'server.clientPack.archive');
+  }
 }
 
 export function validateConfig(config: BackendConfig): void {
@@ -52,6 +70,17 @@ export function validateConfig(config: BackendConfig): void {
   if (config.server.modpack) {
     assert(Boolean(config.server.modpack.nexusCollection), 'server.modpack.nexusCollection is required');
     positiveInteger(config.server.modpack.revision, 'server.modpack.revision');
+  }
+  if (config.server.clientPack) {
+    assert(Boolean(config.server.clientPack.archive), 'server.clientPack.archive is required');
+    assert(Boolean(config.server.clientPack.host), 'server.clientPack.host is required');
+    positiveInteger(config.server.clientPack.port, 'server.clientPack.port');
+    assert(config.server.clientPack.port <= 65535, 'server.clientPack.port must be <= 65535');
+    assert(![
+      config.internalApi.port,
+      config.server.gamePort,
+      config.server.resourcesPort,
+    ].includes(config.server.clientPack.port), 'server.clientPack.port must be distinct from internal, game and resources ports');
   }
   assert(Boolean(config.supervisor?.command), 'supervisor.command is required');
   assert(Array.isArray(config.supervisor?.args), 'supervisor.args must be an array');
@@ -92,4 +121,16 @@ export function ensureInternalToken(
   const value = randomBytes(32).toString('base64url');
   environment[envName] = value;
   return { value, generated: true };
+}
+
+function requirePath(path: string, field: string, directory = false): void {
+  let details;
+  try {
+    details = statSync(path);
+  } catch {
+    throw new Error(`Invalid backend config: ${field} does not exist at ${path}`);
+  }
+  if (directory ? !details.isDirectory() : !details.isFile() && !details.isDirectory()) {
+    throw new Error(`Invalid backend config: ${field} has the wrong file type at ${path}`);
+  }
 }
