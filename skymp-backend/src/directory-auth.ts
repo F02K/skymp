@@ -22,11 +22,27 @@ const canonicalJson = (value: unknown): string => {
 };
 export const canonicalPlayGrant = (grant: DirectoryGrant) => `skymp-play-grant-v1\n${canonicalJson(grant)}`;
 
+export function decodePlayTicket(ticket: string): unknown {
+  if (!ticket || ticket.length > 64 * 1024) {
+    throw new GrantError(400, 'invalidPlayTicket', 'Play ticket is malformed.');
+  }
+  try {
+    return JSON.parse(Buffer.from(ticket, 'base64url').toString('utf8'));
+  } catch {
+    throw new GrantError(400, 'invalidPlayTicket', 'Play ticket is malformed.');
+  }
+}
+
 export function verifyDirectoryGrant(body: unknown, config: BackendConfig): DirectoryGrant {
-  const value = body as Record<string, unknown> | null;
-  const grant = value?.grant as DirectoryGrant | undefined;
-  const signature = typeof value?.signature === 'string' ? value.signature : '';
+  const supplied = body as Record<string, unknown> | null;
+  const value = typeof supplied?.ticket === 'string'
+    ? decodePlayTicket(supplied.ticket)
+    : supplied;
+  const envelope = value as Record<string, unknown> | null;
+  const grant = envelope?.grant as DirectoryGrant | undefined;
+  const signature = typeof envelope?.signature === 'string' ? envelope.signature : '';
   if (!grant || grant.schemaVersion !== 1 || !grant.jti || !grant.identity?.discordId || !grant.identity?.username || !signature) throw new GrantError(400, 'invalidPlayGrant', 'Play grant is malformed.');
+  if (!config.server.id) throw new GrantError(503, 'directoryAuthUnavailable', 'Directory registration is not ready.');
   if (!config.sessions.directoryPublicKey) throw new GrantError(503, 'directoryAuthUnavailable', 'Directory public key is not configured.');
   let valid = false;
   try {
@@ -36,7 +52,13 @@ export function verifyDirectoryGrant(body: unknown, config: BackendConfig): Dire
   if (!valid) throw new GrantError(401, 'invalidPlayGrantSignature', 'Play grant signature is invalid.');
   if (grant.audience !== config.server.id) throw new GrantError(403, 'playGrantAudienceMismatch', 'Play grant belongs to another server.');
   const now = Date.now(); const skew = config.sessions.clockSkewMs ?? 30000;
-  if (!Number.isFinite(grant.issuedAt) || !Number.isFinite(grant.expiresAt) || grant.expiresAt - grant.issuedAt > 60000 || grant.issuedAt > now + skew || grant.expiresAt < now - skew) throw new GrantError(401, 'playGrantExpired', 'Play grant is expired or not yet valid.');
+  if (!Number.isFinite(grant.issuedAt) || !Number.isFinite(grant.expiresAt)
+    || grant.expiresAt - grant.issuedAt > 60000
+    || grant.expiresAt <= grant.issuedAt
+    || grant.issuedAt > now + skew
+    || grant.expiresAt < now) {
+    throw new GrantError(401, 'playGrantExpired', 'Play grant is expired or not yet valid.');
+  }
   if (grant.membership && (!grant.membership.guildId || !Array.isArray(grant.membership.roles))) throw new GrantError(400, 'invalidPlayGrant', 'Play grant membership is malformed.');
   const requiredGuild = config.server.access?.discordGuild;
   if (requiredGuild?.required && grant.membership?.guildId !== requiredGuild.guildId) throw new GrantError(403, 'guildMembershipRequired', 'Required Discord guild membership is missing.');

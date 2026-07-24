@@ -13,7 +13,6 @@ export type ServerState =
 export interface ListenerConfig { host: string; port: number }
 
 export interface BackendConfig {
-  publicApi: ListenerConfig;
   internalApi: ListenerConfig;
   database: {
     adapter: 'sqlite' | 'postgres';
@@ -21,14 +20,24 @@ export interface BackendConfig {
     connectionStringEnv?: string;
   };
   server: {
-    id: string;
+    id?: string;
     internalTokenEnv: string;
     name: string;
     description: string;
     region: string;
     tags: string[];
-    publicBackendUrl: string;
-    gameAddress: string;
+    gamePort: number;
+    resourcesPort: number;
+    hostname?: string;
+    gamemode: string;
+    dataDirectory: string;
+    plugins: string[];
+    loadOrder: string[];
+    modpack?: {
+      nexusCollection: string;
+      revision: number;
+      hashes?: Record<string, string>;
+    };
     maxPlayers: number;
     visibility: 'public' | 'private';
     versions?: Record<string, string>;
@@ -49,6 +58,7 @@ export interface BackendConfig {
     };
   };
   sessions: { ttlSeconds: number; directoryPublicKey?: string; clockSkewMs?: number };
+  network?: { autoMapPorts: boolean };
   modules: ModuleSelection[];
 }
 
@@ -151,4 +161,4 @@ export interface BackendModule {
   stop(): Promise<void> | void;
 }
 
-export interface ApiHandles { publicServer: Server; internalServer: Server }
+export interface ApiHandles { internalServer: Server }

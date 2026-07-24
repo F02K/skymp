@@ -1,16 +1,18 @@
 {
-  "publicApi": { "host": "0.0.0.0", "port": 3000 },
   "internalApi": { "host": "127.0.0.1", "port": 3001 },
   "database": { "adapter": "sqlite", "path": "./data/backend.sqlite" },
   "server": {
-    "id": "local-server",
     "internalTokenEnv": "SKYMP_BACKEND_TOKEN",
     "name": "My SkyMP Server",
     "description": "A managed SkyMP server",
     "region": "eu-central",
     "tags": [],
-    "publicBackendUrl": "http://localhost:3000",
-    "gameAddress": "127.0.0.1:7777",
+    "gamePort": 7777,
+    "resourcesPort": 7778,
+    "gamemode": "default",
+    "dataDirectory": "./data",
+    "plugins": [],
+    "loadOrder": [],
     "maxPlayers": 100,
     "visibility": "private",
     "access": { "discordGuild": { "required": false } }
@@ -31,17 +33,17 @@
   },
   "sessions": {
     "ttlSeconds": 43200,
-    "directoryPublicKey": "MCowBQYDK2VwAyEA2jcO6XMepYSleeMojjMAfRjX9Pof9pS+B3uh9+Z17kE=",
     "clockSkewMs": 30000
   },
+  "network": { "autoMapPorts": false },
   "modules": [
     {
       "id": "directory-connector",
-      "enabled": false,
-      "required": false,
+      "enabled": true,
+      "required": true,
       "config": {
         "url": "https://skyservers.online",
-        "credentialEnv": "SKYMP_DIRECTORY_CREDENTIAL",
+        "autoRegister": true,
         "heartbeatIntervalMs": 15000
       }
     }

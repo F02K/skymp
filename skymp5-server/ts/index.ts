@@ -22,7 +22,6 @@ import { MasterClient } from "./systems/masterClient";
 import { Spawn } from "./systems/spawn";
 import { Login } from "./systems/login";
 import { DiscordBanSystem } from "./systems/discordBanSystem";
-import { MasterApiBalanceSystem } from "./systems/masterApiBalanceSystem";
 import { EventEmitter } from "events";
 import { pid } from "process";
 
@@ -62,18 +61,22 @@ const main = async () => {
   const {
     port, backend, maxPlayers, name, offlineMode, gamemodePath
   } = settingsObject;
-  if (!backend) throw new Error("Managed backend configuration is required");
-  const backendToken = process.env[backend.tokenEnv]!;
+  if (!backend && !offlineMode) throw new Error("Managed backend configuration is required");
+  const effectiveBackend = backend ?? {
+    url: "http://127.0.0.1:1",
+    serverId: "offline",
+    tokenEnv: "SKYMP_OFFLINE_NO_TOKEN",
+  };
+  const backendToken = process.env[effectiveBackend.tokenEnv] ?? "";
 
   const log = console.log;
   const systems = new Array<System>();
   systems.push(
     new MetricsSystem(),
-    new MasterClient(log, port, backend.url, maxPlayers, name, backend.serverId, backendToken, 5000, offlineMode),
+    new MasterClient(log, port, effectiveBackend.url, maxPlayers, name, effectiveBackend.serverId, backendToken, 5000, offlineMode),
     new Spawn(log),
-    new Login(log, maxPlayers, backend.url, port, backend.serverId, backendToken, offlineMode),
+    new Login(log, maxPlayers, effectiveBackend.url, port, effectiveBackend.serverId, backendToken, offlineMode),
     new DiscordBanSystem(),
-    new MasterApiBalanceSystem(log, maxPlayers, backend.url, port, backend.serverId, backendToken, offlineMode),
   );
 
   setupStreams(scampNative.getScampNative());

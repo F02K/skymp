@@ -39,7 +39,7 @@ export class ModuleLoader {
         this.validateManifest(module.manifest, lock);
         loaded.set(item.id, { module, required: item.required, config: item.config ?? {} });
       } catch (cause) {
-        if (item.required) throw new Error(`Required module ${item.id} could not be loaded`, { cause });
+        if (item.required) throw new Error(`Required module ${item.id} could not be loaded: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
         this.logger.warn('Optional module could not be loaded', { moduleId: item.id, cause: cause instanceof Error ? cause.message : String(cause) });
       }
     }
@@ -63,7 +63,7 @@ export class ModuleLoader {
         this.started.push(entry.module);
         this.logger.info('Module started', { moduleId: entry.module.manifest.id, version: entry.module.manifest.version });
       } catch (cause) {
-        if (entry.required) throw new Error(`Required module ${entry.module.manifest.id} failed to start`, { cause });
+        if (entry.required) throw new Error(`Required module ${entry.module.manifest.id} failed to start: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
         this.logger.warn('Optional module failed to start', { moduleId: entry.module.manifest.id, cause: cause instanceof Error ? cause.message : String(cause) });
       }
     }
@@ -87,7 +87,7 @@ export class ModuleLoader {
   }
 
   private async load(id: string, path?: string): Promise<BackendModule> {
-    if (id === 'directory-connector' && !path) return new DirectoryConnector(this.config.server);
+    if (id === 'directory-connector' && !path) return new DirectoryConnector(this.config);
     if (!path) throw new Error(`No builtin module or path exists for ${id}`);
     const root = resolve(path);
     const manifest = JSON.parse(readFileSync(resolve(root, 'skymp-module.json'), 'utf8')) as ModuleManifest;

@@ -1,6 +1,8 @@
+import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { BackendConfig } from './types.js';
+import { applyBackendEnvironment } from './setup.js';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`Invalid backend config: ${message}`);
@@ -12,7 +14,7 @@ function positiveInteger(value: unknown, field: string): asserts value is number
 
 export function loadConfig(path = 'backend.config.json'): BackendConfig {
   const absolutePath = resolve(path);
-  const config = JSON.parse(readFileSync(absolutePath, 'utf8')) as BackendConfig;
+  const config = applyBackendEnvironment(JSON.parse(readFileSync(absolutePath, 'utf8')) as BackendConfig);
   validateConfig(config);
   const root = dirname(absolutePath);
   config.supervisor.cwd = resolve(root, config.supervisor.cwd);
@@ -22,18 +24,10 @@ export function loadConfig(path = 'backend.config.json'): BackendConfig {
 
 export function validateConfig(config: BackendConfig): void {
   assert(config && typeof config === 'object', 'root must be an object');
-  for (const [name, listener] of [
-    ['publicApi', config.publicApi],
-    ['internalApi', config.internalApi],
-  ] as const) {
-    assert(listener && typeof listener.host === 'string', `${name}.host is required`);
-    positiveInteger(listener.port, `${name}.port`);
-    assert(listener.port <= 65535, `${name}.port must be <= 65535`);
-  }
-  assert(
-    config.publicApi.host !== config.internalApi.host || config.publicApi.port !== config.internalApi.port,
-    'publicApi and internalApi must use separate listeners',
-  );
+  const listener = config.internalApi;
+  assert(listener && typeof listener.host === 'string', 'internalApi.host is required');
+  positiveInteger(listener.port, 'internalApi.port');
+  assert(listener.port <= 65535, 'internalApi.port must be <= 65535');
   assert(
     ['127.0.0.1', '::1', 'localhost'].includes(config.internalApi.host),
     'internalApi.host must be loopback-only',
@@ -42,11 +36,23 @@ export function validateConfig(config: BackendConfig): void {
   assert(config.database.adapter !== 'sqlite' || Boolean(config.database.path), 'database.path is required for sqlite');
   assert(!('masterKeyEnv' in (config.server ?? {})), 'server.masterKeyEnv is unsupported; use server.internalTokenEnv');
   assert(!('issuerTokenEnv' in (config.sessions ?? {})), 'sessions.issuerTokenEnv is unsupported; sessions are issued only from Directory grants');
-  assert(Boolean(config.server?.id), 'server.id is required');
+  const directory = config.modules?.find((module) => module.id === 'directory-connector' && module.enabled);
+  const autoRegister = directory?.config?.autoRegister !== false;
+  assert(Boolean(config.server?.id) || Boolean(directory && autoRegister), 'server.id is required unless directory-connector autoRegister is enabled');
   assert(Boolean(config.server?.internalTokenEnv), 'server.internalTokenEnv is required');
   assert(Boolean(config.server?.name), 'server.name is required');
-  const address = config.server?.gameAddress?.match(/^(?:\[[^\]]+]|[^:]+):(\d+)$/);
-  assert(address && Number(address[1]) >= 1 && Number(address[1]) <= 65535, 'server.gameAddress must be host:port with a valid port');
+  positiveInteger(config.server.gamePort, 'server.gamePort');
+  assert(config.server.gamePort <= 65535, 'server.gamePort must be <= 65535');
+  positiveInteger(config.server.resourcesPort, 'server.resourcesPort');
+  assert(config.server.resourcesPort <= 65535, 'server.resourcesPort must be <= 65535');
+  assert(Boolean(config.server.gamemode), 'server.gamemode is required');
+  assert(Boolean(config.server.dataDirectory), 'server.dataDirectory is required');
+  assert(Array.isArray(config.server.plugins), 'server.plugins must be an array');
+  assert(Array.isArray(config.server.loadOrder), 'server.loadOrder must be an array');
+  if (config.server.modpack) {
+    assert(Boolean(config.server.modpack.nexusCollection), 'server.modpack.nexusCollection is required');
+    positiveInteger(config.server.modpack.revision, 'server.modpack.revision');
+  }
   assert(Boolean(config.supervisor?.command), 'supervisor.command is required');
   assert(Array.isArray(config.supervisor?.args), 'supervisor.args must be an array');
   assert(Boolean(config.supervisor?.cwd), 'supervisor.cwd is required');
@@ -75,4 +81,15 @@ export function requireSecret(envName: string): string {
   const value = process.env[envName];
   if (!value) throw new Error(`Required secret environment variable ${envName} is not set`);
   return value;
+}
+
+export function ensureInternalToken(
+  envName: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): { value: string; generated: boolean } {
+  const existing = environment[envName];
+  if (existing) return { value: existing, generated: false };
+  const value = randomBytes(32).toString('base64url');
+  environment[envName] = value;
+  return { value, generated: true };
 }

@@ -65,7 +65,7 @@ export class Settings {
     }
 
     const settings = await fetchServerSettings();
-    if ('master' in settings || 'masterKey' in settings) {
+    if (('master' in settings || 'masterKey' in settings) && settings.offlineMode !== true) {
       throw new Error('Legacy master/masterKey settings are unsupported; configure backend.url, backend.serverId and backend.tokenEnv');
     }
     [
@@ -85,10 +85,46 @@ export class Settings {
       }
     });
 
-    if (!this.backend || typeof this.backend.url !== 'string' || typeof this.backend.serverId !== 'string' || typeof this.backend.tokenEnv !== 'string') {
+    const managedBackendValues = [
+      process.env.SKYMP_BACKEND_URL,
+      process.env.SKYMP_BACKEND_SERVER_ID,
+      process.env.SKYMP_BACKEND_TOKEN_ENV,
+    ];
+    if (managedBackendValues.some(Boolean)) {
+      if (!managedBackendValues.every(Boolean)) {
+        throw new Error('Managed backend overrides require SKYMP_BACKEND_URL, SKYMP_BACKEND_SERVER_ID and SKYMP_BACKEND_TOKEN_ENV together');
+      }
+      this.backend = {
+        url: process.env.SKYMP_BACKEND_URL!,
+        serverId: process.env.SKYMP_BACKEND_SERVER_ID!,
+        tokenEnv: process.env.SKYMP_BACKEND_TOKEN_ENV!,
+      };
+    }
+    if (process.env.SKYMP_SERVER_NAME) this.name = process.env.SKYMP_SERVER_NAME;
+    if (process.env.SKYMP_SERVER_MAX_PLAYERS) {
+      const maxPlayers = Number(process.env.SKYMP_SERVER_MAX_PLAYERS);
+      if (!Number.isInteger(maxPlayers) || maxPlayers < 1) throw new Error('SKYMP_SERVER_MAX_PLAYERS must be a positive integer');
+      this.maxPlayers = maxPlayers;
+    }
+    if (process.env.SKYMP_SERVER_PORT) {
+      const port = Number(process.env.SKYMP_SERVER_PORT);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('SKYMP_SERVER_PORT must be a valid port');
+      this.port = port;
+    }
+    if (process.env.SKYMP_GAMEMODE_PATH) this.gamemodePath = process.env.SKYMP_GAMEMODE_PATH;
+    if (process.env.SKYMP_DATA_DIRECTORY) this.dataDir = process.env.SKYMP_DATA_DIRECTORY;
+    if (process.env.SKYMP_LOAD_ORDER) {
+      const loadOrder = JSON.parse(process.env.SKYMP_LOAD_ORDER);
+      if (!Array.isArray(loadOrder) || !loadOrder.every((item) => typeof item === 'string')) {
+        throw new Error('SKYMP_LOAD_ORDER must be a JSON string array');
+      }
+      this.loadOrder = loadOrder;
+    }
+
+    if (!this.offlineMode && (!this.backend || typeof this.backend.url !== 'string' || typeof this.backend.serverId !== 'string' || typeof this.backend.tokenEnv !== 'string')) {
       throw new Error('backend.url, backend.serverId and backend.tokenEnv are required');
     }
-    if (!process.env[this.backend.tokenEnv]) {
+    if (!this.offlineMode && this.backend && !process.env[this.backend.tokenEnv]) {
       throw new Error(`Backend token environment variable ${this.backend.tokenEnv} is not set`);
     }
 

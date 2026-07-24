@@ -11,6 +11,7 @@ export class Supervisor {
   private readonly attempts: number[] = [];
   private readonly pidPath: string;
   private pidHandle?: number;
+  private childEnvironment: NodeJS.ProcessEnv = {};
 
   constructor(
     private readonly config: BackendConfig['supervisor'],
@@ -20,8 +21,13 @@ export class Supervisor {
     this.pidPath = join(config.cwd, '.skymp-managed.pid');
   }
 
-  async start(): Promise<void> {
-    this.acquirePidLock();
+  async prepare(): Promise<void> {
+    if (this.pidHandle === undefined) this.acquirePidLock();
+  }
+
+  async start(environment: NodeJS.ProcessEnv = {}): Promise<void> {
+    await this.prepare();
+    this.childEnvironment = { ...environment };
     this.stopping = false;
     this.spawnServer();
   }
@@ -53,7 +59,7 @@ export class Supervisor {
     this.logger.info('Starting SkyMP child process', { command: this.config.command, args: this.config.args, cwd: this.config.cwd });
     const child = spawn(this.config.command, this.config.args, {
       cwd: this.config.cwd,
-      env: process.env,
+      env: { ...process.env, ...this.childEnvironment },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
       detached: process.platform !== 'win32',

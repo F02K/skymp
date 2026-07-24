@@ -18,7 +18,7 @@ You can find instructions on setting up the project locally below. To get a loca
 
 These tools required regardless of your system:
 
-* 64-bit [NodeJS](https://nodejs.org/en/download/) 17.x *(may also work for older versions)*
+* 64-bit [NodeJS](https://nodejs.org/en/download/) 22.x or newer
 * [Yarn](https://yarnpkg.com/getting-started/install): `npm install --global yarn`
 * [CMake 3.19](https://cmake.org/download/) or higher
 
@@ -68,6 +68,25 @@ Also you can use containers to build and run server. More info can be found in t
 2. Do OS-specific steps (see below)
 
 ### Windows
+
+The recommended entry point is the dependency-free console buildtool:
+
+```bat
+skymp-buildtool.cmd
+```
+
+It provides environment diagnostics, persistent build profiles, target
+selection, tests, packaging and server launch actions. The same workflow can be
+run non-interactively:
+
+```bat
+skymp-buildtool.cmd doctor
+skymp-buildtool.cmd config set skyrimDir "C:\Program Files (x86)\Steam\steamapps\common\Skyrim Special Edition"
+skymp-buildtool.cmd build --profile release --parallel 8 --test
+```
+
+See [`skymp-buildtool/README.md`](skymp-buildtool/README.md) for all commands.
+Direct CMake usage remains supported:
 
 1. Make a build directory (used for project files, cache, artifacts, etc)
    ```sh
