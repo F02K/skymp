@@ -1,6 +1,9 @@
 project(skymp5-client)
 
-file(GLOB_RECURSE sources ${CMAKE_CURRENT_LIST_DIR}/src/*)
+file(GLOB_RECURSE sources
+  ${CMAKE_CURRENT_LIST_DIR}/src/*
+  ${CMAKE_CURRENT_LIST_DIR}/fallback-ui/*
+)
 
 if(BUILD_CLIENT)
   include(${CMAKE_SOURCE_DIR}/cmake/yarn.cmake)
@@ -25,6 +28,10 @@ if(BUILD_CLIENT)
 
   add_custom_command(
     TARGET skymp5-client POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/dist/client/Data/Platform/UI
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_LIST_DIR}/fallback-ui/index.html
+            ${CMAKE_BINARY_DIR}/dist/client/Data/Platform/UI/index.html
     COMMAND ${CMAKE_COMMAND} -DCLIENT_SETTINGS_JSON_PATH=${CMAKE_BINARY_DIR}/dist/client/Data/Platform/Plugins/skymp5-client-settings.txt -DOFFLINE_MODE=${OFFLINE_MODE} -P ${CMAKE_SOURCE_DIR}/cmake/scripts/generate_client_settings.cmake
   )
 else()

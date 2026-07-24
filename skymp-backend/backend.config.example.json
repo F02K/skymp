@@ -9,7 +9,7 @@
     "tags": [],
     "gamePort": 7777,
     "resourcesPort": 7778,
-    "gamemode": "default",
+    "gamemode": "./gamemode.js",
     "dataDirectory": "./data",
     "plugins": [],
     "loadOrder": [],

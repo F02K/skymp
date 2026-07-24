@@ -17,14 +17,24 @@
         "description": { "type": "string" }, "region": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } },
         "gamePort": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "resourcesPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "hostname": { "type": "string" }, "gamemode": { "type": "string" }, "dataDirectory": { "type": "string" },
+        "hostname": { "type": "string" }, "gamemode": { "type": "string", "minLength": 1 }, "dataDirectory": { "type": "string", "minLength": 1 },
         "plugins": { "type": "array", "items": { "type": "string" } },
-        "loadOrder": { "type": "array", "items": { "type": "string" } },
+        "loadOrder": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "modpack": {
           "type": "object", "required": ["nexusCollection", "revision"],
           "properties": {
             "nexusCollection": { "type": "string" }, "revision": { "type": "integer", "minimum": 1 },
             "hashes": { "type": "object", "additionalProperties": { "type": "string" } }
+          }
+        },
+        "clientPack": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["archive", "host", "port"],
+          "properties": {
+            "archive": { "type": "string", "minLength": 1 },
+            "host": { "type": "string", "minLength": 1 },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
           }
         },
         "maxPlayers": { "type": "integer", "minimum": 1 }, "visibility": { "enum": ["public", "private"] },

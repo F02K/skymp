@@ -16,6 +16,7 @@ import {
   npmInvocation,
   runLogged,
 } from "./process.mjs";
+import { packageClientPack } from "./client-pack.mjs";
 
 export async function doctorAction(configuration, options = {}) {
   const checks = await inspectEnvironment(configuration);
@@ -72,9 +73,11 @@ export async function testAction(configuration, options = {}) {
       ...processOptions,
     });
   }
-  if (suite === "backend" || suite === "gamemode-compiler" || suite === "buildtool") {
+  if (suite === "backend" || suite === "server" || suite === "gamemode-compiler" || suite === "buildtool") {
     const directory = suite === "backend"
       ? resolve(repositoryRoot, "skymp-backend")
+      : suite === "server"
+        ? resolve(repositoryRoot, "skymp5-server")
       : suite === "gamemode-compiler"
         ? resolve(repositoryRoot, "skymp5-gamemode-compiler")
         : toolRoot;
@@ -89,6 +92,13 @@ export async function testAction(configuration, options = {}) {
 }
 
 export async function packageAction(configuration, kind, options = {}) {
+  if (kind === "client-pack") {
+    const result = await packageClientPack(options.stagingDirectory, options.outputFile);
+    const message = `Client Pack packaged in ${result.outputFile}\n`;
+    if (options.processOptions?.display !== false) process.stdout.write(message);
+    options.processOptions?.onOutput?.(message);
+    return result;
+  }
   if (kind === "managed-server") {
     const managedConfiguration = withCmakeOptions(configuration, {
       BUILD_MANAGED_BACKEND: "ON",
@@ -184,6 +194,7 @@ export async function runAction(kind, options = {}) {
     ], {
       cwd: serverDirectory,
       label: "run-managed-server",
+      inheritStdio: Boolean(options.setup && process.stdin.isTTY),
       env: {
         ...process.env,
         ...(process.stdin.isTTY ? { SKYMP_SETUP_INTERACTIVE: "1" } : {}),
@@ -205,6 +216,7 @@ export async function setupAction(kind, options = {}) {
   return await runLogged(process.execPath, [entry, "--config", "backend.config.json"], {
     cwd: serverDirectory,
     label: "setup-managed-server",
+    inheritStdio: Boolean(process.stdin.isTTY),
     env: {
       ...process.env,
       SKYMP_SETUP_INTERACTIVE: process.stdin.isTTY ? "1" : "0",

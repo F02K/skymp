@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "clientApiVersion": 1,
+  "entrypoint": "Platform/Plugins/skymp-server-extension.js",
+  "ui": "Platform/UI/index.html"
+}

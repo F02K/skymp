@@ -38,6 +38,11 @@ export interface BackendConfig {
       revision: number;
       hashes?: Record<string, string>;
     };
+    clientPack?: {
+      archive: string;
+      host: string;
+      port: number;
+    };
     maxPlayers: number;
     visibility: 'public' | 'private';
     versions?: Record<string, string>;
@@ -161,4 +166,40 @@ export interface BackendModule {
   stop(): Promise<void> | void;
 }
 
-export interface ApiHandles { internalServer: Server }
+export interface ApiHandles {
+  internalServer: Server;
+  clientPackServer?: Server;
+}
+
+export interface ClientPackDescriptor {
+  port: number;
+  version: string;
+  clientApiVersion: 1;
+  manifestSha256: string;
+}
+
+export interface ClientPackManifestFile {
+  path: string;
+  size: number;
+  sha256: string;
+}
+
+export interface ClientPackManifest {
+  schemaVersion: 1;
+  serverId: string;
+  version: string;
+  clientApiVersion: 1;
+  permission: 'full-skyrim-platform';
+  entrypoint: 'Platform/Plugins/skymp-server-extension.js';
+  ui?: string;
+  archive: {
+    format: 'zip';
+    size: number;
+    sha256: string;
+  };
+  files: ClientPackManifestFile[];
+  signature: {
+    algorithm: 'Ed25519';
+    value: string;
+  };
+}

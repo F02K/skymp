@@ -30,8 +30,9 @@ Usage:
   skymp-buildtool.cmd config set <key> <value>
   skymp-buildtool.cmd configure [--profile <name>] [--config <name>] [--set KEY=VALUE] [-- <cmake args...>]
   skymp-buildtool.cmd build [--profile <name>] [--target <target>] [--parallel N] [--test] [-- <cmake args...>]
-  skymp-buildtool.cmd test --suite <all|unit|backend|gamemode-compiler|buildtool> [--filter <value>]
+  skymp-buildtool.cmd test --suite <all|unit|backend|server|gamemode-compiler|buildtool> [--filter <value>]
   skymp-buildtool.cmd package <managed-server|nexus>
+  skymp-buildtool.cmd package client-pack <staging-directory> <output.zip>
   skymp-buildtool.cmd gamemode <build|check|watch> --config <path>
   skymp-buildtool.cmd run <server|managed-server> [--setup] [managed server options]
   skymp-buildtool.cmd setup managed-server [managed server options]
@@ -49,6 +50,8 @@ Managed server setup options:
   --server-tags <comma-separated>
   --game-port <udp-port>
   --resources-port <tcp-port>
+  --client-pack <zip-path>
+  --client-port <tcp-port>
   --server-hostname <optional-hostname>
   --gamemode <name>
   --data-directory <path>
@@ -109,8 +112,12 @@ export async function main(argv = process.argv.slice(2)) {
       });
       return 0;
     case "package":
-      if (!parsed.subcommand) throw new Error("package requires managed-server or nexus");
-      await packageAction(configuration, parsed.subcommand, { parallel: parsed.options.parallel });
+      if (!parsed.subcommand) throw new Error("package requires managed-server, nexus or client-pack");
+      await packageAction(configuration, parsed.subcommand, {
+        parallel: parsed.options.parallel,
+        stagingDirectory: parsed.rest[0],
+        outputFile: parsed.rest[1],
+      });
       return 0;
     case "gamemode":
       await gamemodeAction(

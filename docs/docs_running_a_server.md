@@ -27,23 +27,27 @@ skymp-buildtool.cmd run managed-server
 ```
 
 When `backend.config.json` is absent, the launcher opens a short setup wizard.
-It generates the non-secret configuration, persistent Directory identity and
-temporary internal backend token automatically. The Directory assigns the
-server ID, and the managed supervisor passes it to SkyMP without requiring a
-duplicated `backend.serverId` in `server-settings.json`.
+It generates the non-secret configuration and persistent Ed25519 server
+identity; the managed launch also supplies an internal backend token. The
+managed backend registers and sends heartbeats outbound to the selected
+Directory. The Directory derives the public source address, assigns the server
+ID, and returns its signing key for the backend to pin. No public backend URL,
+pairing code, operator exchange endpoint or inbound Directory callback is
+required.
 
-Hosting panels can run the same setup without a terminal using
-`SKYMP_SERVER_NAME`, `SKYMP_PUBLIC_BACKEND_URL`,
-`SKYMP_GAME_ADDRESS`, `SKYMP_SERVER_REGION` and
-`SKYMP_SERVER_VISIBILITY`. Public Directory registration requires a reachable
-HTTPS URL whose reverse proxy forwards
-`/.well-known/skymp-directory/verify` to the backend public API.
-If `SKYMP_BACKEND_TOKEN` is absent, the backend generates a temporary internal
-token for the current session and passes it to SkyMP without writing it to
-disk or logs. `launch_server.bat` and `skymp-buildtool.cmd run server` remain direct/debug
+Hosting panels can run the same setup without a terminal using the
+`skymp-buildtool setup managed-server` command-line options or the supported
+`SKYMP_*` environment inputs, including `SKYMP_SERVER_NAME` and
+`SKYMP_DIRECTORY_URL`. If `SKYMP_BACKEND_TOKEN` is absent, the backend
+generates a temporary internal token for the current run and passes it to SkyMP
+without writing it to disk or logs. The authenticated backend API stays on
+loopback and must not be forwarded or exposed to the public internet.
+
+`launch_server.bat` and `skymp-buildtool.cmd run server` remain direct/debug
 entry points. The legacy `node scripts/package-managed-server.mjs` command
-continues to work. Full setup and security notes are in
-`skymp-backend/README.md`.
+continues to work. See [Authentication Flow](docs_authentication.md) for the
+player authentication and ticket lifecycle. Full managed-server setup and
+security notes are in `skymp-backend/README.md`.
 
 You obviously need to have 64-bit Windows version since the server is 64-bit program.
 

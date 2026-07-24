@@ -13,6 +13,8 @@ const VALUE_OPTIONS = new Set([
   "--server-tags",
   "--game-port",
   "--resources-port",
+  "--client-pack",
+  "--client-port",
   "--server-hostname",
   "--gamemode",
   "--data-directory",
@@ -59,6 +61,8 @@ export function parseArguments(argv) {
         case "--server-tags": options.managedEnvironment.SKYMP_SERVER_TAGS = value; break;
         case "--game-port": options.managedEnvironment.SKYMP_GAME_PORT = String(parsePort(value, argument)); break;
         case "--resources-port": options.managedEnvironment.SKYMP_RESOURCES_PORT = String(parsePort(value, argument)); break;
+        case "--client-pack": options.managedEnvironment.SKYMP_CLIENT_PACK_ARCHIVE = value; break;
+        case "--client-port": options.managedEnvironment.SKYMP_CLIENT_PACK_PORT = String(parsePort(value, argument)); break;
         case "--server-hostname": options.managedEnvironment.SKYMP_SERVER_HOSTNAME = value; break;
         case "--gamemode": options.managedEnvironment.SKYMP_GAMEMODE = value; break;
         case "--data-directory": options.managedEnvironment.SKYMP_DATA_DIRECTORY = value; break;

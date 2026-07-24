@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
+import { basename } from 'node:path';
 import type { BackendConfig, BackendModule, ModuleContext } from '../types.js';
+import { ClientPackService } from '../client-pack.js';
 import {
   canonicalDirectoryRequest,
   createDirectoryIdentity,
@@ -46,6 +48,7 @@ export class DirectoryConnector implements BackendModule {
   private context?: ModuleContext;
   private statusListener?: () => void;
   private identity?: StoredDirectoryIdentity;
+  private clientPack?: ClientPackService;
   private stopping = false;
 
   constructor(private readonly backend: BackendConfig) {}
@@ -66,6 +69,14 @@ export class DirectoryConnector implements BackendModule {
       });
     }
     this.applyStoredRegistration();
+    if (this.backend.server.clientPack) {
+      this.clientPack = new ClientPackService(
+        this.backend.server.clientPack,
+        this.requireIdentity(),
+        this.backend.server.id,
+      );
+      context.services.set('clientPack', this.clientPack);
+    }
     if (config.autoRegister !== false) {
       if (this.identity.serverId && this.identity.directoryPublicKey) {
         await this.registerOnce().catch((cause) => {
@@ -182,6 +193,7 @@ export class DirectoryConnector implements BackendModule {
     identity.joinCode = payload.joinCode;
     this.backend.server.id = payload.serverId;
     this.backend.sessions.directoryPublicKey = payload.directorySigningKey.publicKey;
+    this.clientPack?.finalize(payload.serverId);
     await this.persistIdentity();
     context.logger.info('Directory registration is ready', {
       serverId: payload.serverId,
@@ -254,10 +266,13 @@ export class DirectoryConnector implements BackendModule {
           nexusCollection: this.backend.server.modpack.nexusCollection,
           revision: this.backend.server.modpack.revision,
           plugins: this.backend.server.plugins,
-          loadOrder: this.backend.server.loadOrder,
+          loadOrder: this.backend.server.loadOrder.map((entry) => basename(entry)),
           hashes: this.backend.server.modpack.hashes ?? {},
         }
         : undefined,
+      ...(this.clientPack?.descriptor()
+        ? { clientPack: this.clientPack.descriptor() }
+        : {}),
     };
   }
 

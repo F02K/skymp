@@ -75,7 +75,7 @@ const main = async () => {
     new MetricsSystem(),
     new MasterClient(log, port, effectiveBackend.url, maxPlayers, name, effectiveBackend.serverId, backendToken, 5000, offlineMode),
     new Spawn(log),
-    new Login(log, maxPlayers, effectiveBackend.url, port, effectiveBackend.serverId, backendToken, offlineMode),
+    new Login(log, maxPlayers, effectiveBackend.url, port, effectiveBackend.serverId, backendToken, offlineMode, settingsObject.clientPack),
     new DiscordBanSystem(),
   );
 
@@ -190,7 +190,11 @@ const main = async () => {
   setupGamemode(server, gamemodePath);
 };
 
-main();
+void main().catch((cause) => {
+  console.error("[FATAL] SkyMP server startup failed");
+  console.error(cause);
+  process.exitCode = 1;
+});
 
 // This is needed at least to handle axios errors in masterClient
 // TODO: implement alerts

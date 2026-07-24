@@ -12,5 +12,10 @@ preserves unrelated configuration keys, creates a timestamped backup and writes
 the replacement atomically. The Ed25519 server identity and assigned server ID
 remain in the backend database.
 
+The legacy gamemode value `default` is interpreted and migrated as
+`./gamemode.js`. Managed packages use a neutral `./data` baseline rather than
+embedding the build machine's Skyrim directory. Re-run setup and choose the
+local Skyrim `Data` directory when absolute local plugin paths are desired.
+
 Directory migration retains Ed25519 identities/server IDs and marks existing
 rows offline until their first heartbeat using the final descriptor.

@@ -38,6 +38,7 @@ test('config updates preserve unknown settings and create backup', async () => {
   const target = join(root, 'backend.config.json');
   const template = JSON.parse(await readFile('backend.config.example.json', 'utf8'));
   template.server.name = 'Existing';
+  template.server.gamemode = 'default';
   template.server.publicBackendUrl = 'https://legacy.example';
   template.modules.find((module) => module.id === 'directory-connector').config.credentialEnv = 'LEGACY_DIRECTORY_SECRET';
   template.customOperatorSetting = { keep: true };
@@ -50,6 +51,7 @@ test('config updates preserve unknown settings and create backup', async () => {
   const updated = JSON.parse(await readFile(target, 'utf8'));
   assert.deepEqual(updated.customOperatorSetting, { keep: true });
   assert.equal(updated.server.publicBackendUrl, undefined);
+  assert.equal(updated.server.gamemode, './gamemode.js');
   assert.equal(updated.modules.find((module) => module.id === 'directory-connector').config.credentialEnv, undefined);
   const files = await (await import('node:fs/promises')).readdir(root);
   assert.ok(files.some((name) => name.startsWith('backend.config.json.bak-')));
@@ -76,7 +78,7 @@ test('plugin selection is case-insensitive and preserves an explicit load order'
   assert.throws(() => resolvePluginNames(['missing.esp'], discovered), /was not found/);
 });
 
-test('environment overrides and fallback instructions contain only game/resources ports', () => {
+test('environment overrides and fallback instructions include an optional Client Pack port', () => {
   const config = JSON.parse(JSON.stringify({
     server: { name: 'x', description: '', region: 'eu', tags: [], gamePort: 7777, resourcesPort: 7778, gamemode: 'default', dataDirectory: './data', plugins: [], loadOrder: [], maxPlayers: 10, visibility: 'public' },
     modules: [{ id: 'directory-connector', enabled: true, required: true, config: {} }],
@@ -87,10 +89,24 @@ test('environment overrides and fallback instructions contain only game/resource
   assert.match(portForwardingInstructions(config), /UDP 7777/);
   assert.match(portForwardingInstructions(config), /TCP 7778/);
   assert.doesNotMatch(portForwardingInstructions(config), /3001/);
+  assert.throws(
+    () => applyBackendEnvironment(config, { SKYMP_CLIENT_PACK_ARCHIVE: './pack.zip' }),
+    /must be supplied together/u,
+  );
+  applyBackendEnvironment(config, {
+    SKYMP_CLIENT_PACK_ARCHIVE: './pack.zip',
+    SKYMP_CLIENT_PACK_PORT: '7779',
+  });
+  assert.deepEqual(config.server.clientPack, {
+    archive: './pack.zip',
+    host: '0.0.0.0',
+    port: 7779,
+  });
+  assert.match(portForwardingInstructions(config), /TCP 7779.*Client Pack/);
 });
 
 test('UPnP falls back to NAT-PMP and reports failure for exact UDP/TCP mappings', async () => {
-  const config = { server: { gamePort: 7777, resourcesPort: 7778 } };
+  const config = { server: { gamePort: 7777, resourcesPort: 7778, clientPack: { port: 7779 } } };
   const calls = [];
   const result = await attemptAutomaticPortMapping(config, async (command, args) => {
     calls.push([command, ...args]);
@@ -101,6 +117,8 @@ test('UPnP falls back to NAT-PMP and reports failure for exact UDP/TCP mappings'
     ['upnpc', '7777'],
     ['natpmpc', 'udp'],
     ['upnpc', '7778'],
+    ['natpmpc', 'tcp'],
+    ['upnpc', '7779'],
     ['natpmpc', 'tcp'],
   ]);
 });

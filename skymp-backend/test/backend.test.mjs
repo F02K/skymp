@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { startApis, stopServer } from '../dist/api.js';
-import { ensureInternalToken, validateConfig } from '../dist/config.js';
+import { ensureInternalToken, loadConfig, validateConfig, validateRuntimePaths } from '../dist/config.js';
 import { createLogger, sanitize } from '../dist/logger.js';
 import { RuntimeState } from '../dist/runtime-state.js';
+import { Supervisor } from '../dist/supervisor.js';
 import { SqliteStorage } from '../dist/storage.js';
 import { canonicalPlayGrant } from '../dist/directory-auth.js';
 
@@ -81,6 +82,52 @@ test('internal token is generated once', () => {
   assert.deepEqual(ensureInternalToken('TEST_BACKEND_TOKEN', environment), { value: generated.value, generated: false });
 });
 
+test('runtime paths support validated relative and intentional absolute plugin paths', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skymp-paths-'));
+  const item = config(root);
+  item.server.dataDirectory = join(root, 'data');
+  item.server.gamemode = join(root, 'gamemode.js');
+  item.server.loadOrder = ['Skyrim.esm', join(root, 'absolute.esl')];
+  await (await import('node:fs/promises')).mkdir(item.server.dataDirectory);
+  await Promise.all([
+    writeFile(item.server.gamemode, ''),
+    writeFile(join(item.server.dataDirectory, 'Skyrim.esm'), ''),
+    writeFile(join(root, 'absolute.esl'), ''),
+  ]);
+  assert.doesNotThrow(() => validateRuntimePaths(item));
+  item.server.loadOrder.push(join(root, 'missing.esp'));
+  assert.throws(() => validateRuntimePaths(item), /server\.loadOrder entry.*does not exist/u);
+  await rm(root, { recursive: true, force: true });
+});
+
+test('legacy default gamemode and relative runtime paths resolve beside the backend config', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skymp-config-paths-'));
+  const item = config(root);
+  item.internalApi.port = 3001;
+  item.server.gamemode = 'default';
+  item.server.dataDirectory = './data';
+  const configPath = join(root, 'backend.config.json');
+  await writeFile(configPath, JSON.stringify(item));
+  const loaded = loadConfig(configPath);
+  assert.equal(loaded.server.gamemode, join(root, 'gamemode.js'));
+  assert.equal(loaded.server.dataDirectory, join(root, 'data'));
+  await rm(root, { recursive: true, force: true });
+});
+
+test('logger persists redacted JSON lines for parent and child contexts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skymp-log-'));
+  const logPath = join(root, 'managed-server.jsonl');
+  const logger = createLogger({ component: 'core' }, { filePath: logPath });
+  logger.info('started', { token: 'do-not-write' });
+  logger.child({ component: 'supervisor' }).error('child failed', { code: 1 });
+  const lines = (await readFile(logPath, 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].token, '[REDACTED]');
+  assert.equal(lines[1].component, 'supervisor');
+  assert.equal(lines[1].message, 'child failed');
+  await rm(root, { recursive: true, force: true });
+});
+
 test('play ticket has one first redemption and the same ticket reconnects for 12 hours', async () => {
   const value = await fixture();
   const playTicket = ticket(value.keys);
@@ -117,3 +164,64 @@ test('heartbeat uses only the authenticated loopback API', async () => {
   assert.equal(value.state.get().online, 3);
   await stopServer(value.apis.internalServer); await value.storage.close(); await rm(value.root, { recursive: true, force: true });
 });
+
+test('supervisor keeps a child online after its authenticated readiness heartbeat', async () => {
+  const value = await fixture();
+  const childPath = join(value.root, 'heartbeat-child.mjs');
+  await writeFile(childPath, `
+const response = await fetch(process.env.TEST_BACKEND_URL + '/api/internal/servers/test/heartbeat', {
+  method: 'POST',
+  headers: {
+    authorization: 'Bearer ' + process.env.TEST_BACKEND_TOKEN,
+    'content-type': 'application/json',
+  },
+  body: JSON.stringify({ online: 0, maxPlayers: 10 }),
+});
+if (!response.ok) process.exit(2);
+setInterval(() => {}, 1000);
+`);
+  const supervisorConfig = {
+    command: process.execPath,
+    args: [childPath],
+    cwd: value.root,
+    readyTimeoutMs: 300,
+    shutdownTimeoutMs: 1000,
+    restart: {
+      enabled: true,
+      initialDelayMs: 10,
+      maxDelayMs: 20,
+      maxAttempts: 2,
+      windowMs: 5000,
+    },
+  };
+  const states = [];
+  value.state.on('status', (status) => states.push(status.state));
+  const supervisor = new Supervisor(
+    supervisorConfig,
+    value.state,
+    createLogger({ test: true, component: 'supervisor' }),
+  );
+  const port = value.apis.internalServer.address().port;
+  await supervisor.start({
+    TEST_BACKEND_URL: `http://127.0.0.1:${port}`,
+    TEST_BACKEND_TOKEN: 'local-only',
+  });
+  await waitFor(() => value.state.get().state === 'online');
+  const childPid = value.state.get().childPid;
+  await new Promise((resolve) => setTimeout(resolve, supervisorConfig.readyTimeoutMs * 2));
+  assert.equal(value.state.get().state, 'online');
+  assert.equal(value.state.get().childPid, childPid);
+  assert.equal(states.includes('restart-backoff'), false);
+  await supervisor.stop();
+  await stopServer(value.apis.internalServer);
+  await value.storage.close();
+  await rm(value.root, { recursive: true, force: true });
+});
+
+async function waitFor(predicate, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for test condition');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}

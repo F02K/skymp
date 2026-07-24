@@ -44,6 +44,8 @@ test("parses managed-server setup without treating it as CMake passthrough", () 
     "--server-name", "Space Path Server",
     "--game-port", "7777",
     "--resources-port", "7778",
+    "--client-pack", "build/server.zip",
+    "--client-port", "7779",
     "--server-max-players", "42",
   ]);
   assert.equal(parsed.command, "setup");
@@ -52,6 +54,8 @@ test("parses managed-server setup without treating it as CMake passthrough", () 
     SKYMP_SERVER_NAME: "Space Path Server",
     SKYMP_GAME_PORT: "7777",
     SKYMP_RESOURCES_PORT: "7778",
+    SKYMP_CLIENT_PACK_ARCHIVE: "build/server.zip",
+    SKYMP_CLIENT_PACK_PORT: "7779",
     SKYMP_SERVER_MAX_PLAYERS: "42",
   });
 });

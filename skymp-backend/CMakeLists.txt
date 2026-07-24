@@ -74,7 +74,10 @@ add_custom_command(
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   DEPENDS
     ${backend_output}
+    skymp5-server
+    ${CMAKE_BINARY_DIR}/dist/server/server-settings.json
     ${CMAKE_SOURCE_DIR}/scripts/package-managed-server.mjs
+    ${CMAKE_SOURCE_DIR}/scripts/managed-server-settings.mjs
     ${CMAKE_CURRENT_LIST_DIR}/backend.config.example.json
     ${CMAKE_CURRENT_LIST_DIR}/backend.config.schema.json
     ${CMAKE_CURRENT_LIST_DIR}/modules.lock.json

@@ -22,7 +22,10 @@ export class ServerJsVerificationService extends ClientListener {
     }
 
     const publicKeys = getTargetPeerResult.targetPeerCached.publicKeys;
-    if (!publicKeys) {
+    if (!publicKeys || Object.keys(publicKeys).length === 0) {
+      if (settingsService.isLauncherManaged()) {
+        return { src: null, error: 'managed server did not publish a server-code signing key' };
+      }
       logTrace(this, 'No public keys configured, skipping server JS verification');
       return { src, error: null };
     }
