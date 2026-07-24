@@ -1,32 +1,44 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://skymp.io/schemas/managed-backend-config-v1.json",
+  "$id": "https://skymp.io/schemas/managed-backend-config.json",
   "type": "object",
-  "additionalProperties": false,
-  "required": ["publicApi", "internalApi", "database", "server", "supervisor", "sessions", "modules"],
+  "required": ["internalApi", "database", "server", "supervisor", "sessions", "modules"],
   "properties": {
-    "publicApi": { "$ref": "#/$defs/listener" },
     "internalApi": { "$ref": "#/$defs/listener" },
     "database": {
-      "type": "object", "additionalProperties": false, "required": ["adapter"],
+      "type": "object", "required": ["adapter"],
       "properties": { "adapter": { "enum": ["sqlite", "postgres"] }, "path": { "type": "string" }, "connectionStringEnv": { "type": "string" } }
     },
     "server": {
-      "type": "object", "additionalProperties": false, "required": ["id", "internalTokenEnv", "name", "description", "region", "tags", "publicBackendUrl", "gameAddress", "maxPlayers", "visibility"],
+      "type": "object",
+      "required": ["internalTokenEnv", "name", "description", "region", "tags", "gamePort", "resourcesPort", "gamemode", "dataDirectory", "plugins", "loadOrder", "maxPlayers", "visibility"],
       "properties": {
         "id": { "type": "string" }, "internalTokenEnv": { "type": "string" }, "name": { "type": "string" },
         "description": { "type": "string" }, "region": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } },
-        "publicBackendUrl": { "type": "string", "format": "uri" }, "gameAddress": { "type": "string" }, "maxPlayers": { "type": "integer", "minimum": 1 },
-        "visibility": { "enum": ["public", "private"] }, "versions": { "type": "object", "additionalProperties": { "type": "string" } },
-        "access": { "type": "object", "additionalProperties": false, "properties": { "discordGuild": { "type": "object", "additionalProperties": false, "required": ["required"], "properties": { "required": { "type": "boolean" }, "guildId": { "type": "string" }, "inviteUrl": { "type": "string", "format": "uri" } } } } }
+        "gamePort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "resourcesPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "hostname": { "type": "string" }, "gamemode": { "type": "string" }, "dataDirectory": { "type": "string" },
+        "plugins": { "type": "array", "items": { "type": "string" } },
+        "loadOrder": { "type": "array", "items": { "type": "string" } },
+        "modpack": {
+          "type": "object", "required": ["nexusCollection", "revision"],
+          "properties": {
+            "nexusCollection": { "type": "string" }, "revision": { "type": "integer", "minimum": 1 },
+            "hashes": { "type": "object", "additionalProperties": { "type": "string" } }
+          }
+        },
+        "maxPlayers": { "type": "integer", "minimum": 1 }, "visibility": { "enum": ["public", "private"] },
+        "versions": { "type": "object", "additionalProperties": { "type": "string" } },
+        "access": { "type": "object" }
       }
     },
     "supervisor": { "type": "object" },
-    "sessions": { "type": "object", "additionalProperties": false, "required": ["ttlSeconds"], "properties": { "ttlSeconds": { "type": "integer", "minimum": 1 }, "directoryPublicKey": { "type": "string" }, "clockSkewMs": { "type": "integer", "minimum": 0 } } },
+    "sessions": { "type": "object", "required": ["ttlSeconds"], "properties": { "ttlSeconds": { "type": "integer", "minimum": 1 }, "directoryPublicKey": { "type": "string" }, "clockSkewMs": { "type": "integer", "minimum": 0 } } },
+    "network": { "type": "object", "properties": { "autoMapPorts": { "type": "boolean" } } },
     "modules": { "type": "array", "items": { "$ref": "#/$defs/module" } }
   },
   "$defs": {
-    "listener": { "type": "object", "additionalProperties": false, "required": ["host", "port"], "properties": { "host": { "type": "string" }, "port": { "type": "integer", "minimum": 1, "maximum": 65535 } } },
-    "module": { "type": "object", "additionalProperties": false, "required": ["id", "enabled", "required"], "properties": { "id": { "type": "string" }, "enabled": { "type": "boolean" }, "required": { "type": "boolean" }, "path": { "type": "string" }, "config": { "type": "object" } } }
+    "listener": { "type": "object", "required": ["host", "port"], "properties": { "host": { "type": "string" }, "port": { "type": "integer", "minimum": 1, "maximum": 65535 } } },
+    "module": { "type": "object", "required": ["id", "enabled", "required"], "properties": { "id": { "type": "string" }, "enabled": { "type": "boolean" }, "required": { "type": "boolean" }, "path": { "type": "string" }, "config": { "type": "object" } } }
   }
 }

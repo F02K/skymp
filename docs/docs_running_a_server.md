@@ -11,19 +11,39 @@ The server requires `Windows 8.1` / `Windows Server 2012` or higher. It may stil
 ## Managed operator backend (fork extension)
 
 This fork can package an operator-owned backend without changing the upstream
-SkyMP server or its direct launch path. Run:
+SkyMP server or its direct launch path. The normal native build includes the
+backend. To build and package it explicitly on Windows, run:
 
 ```text
-node scripts/package-managed-server.mjs
+skymp-buildtool.cmd package managed-server
 ```
 
-The command builds `skymp-backend`, copies it to
+The command builds `skymp5-server` and `skymp-backend`, copies the backend to
 `build/dist/server/backend/`, and creates `launch_managed_server.bat` plus
-`launch_managed_server.sh`. Copy the generated backend config example to
-`backend.config.json`, set the required secrets in the service environment,
-and point SkyMP's existing `master` setting at the backend's loopback-only
-internal listener. `launch_server.bat` remains the unchanged upstream/debug
-entry point. Full setup and security notes are in `skymp-backend/README.md`.
+`launch_managed_server.sh`. Start it with:
+
+```text
+skymp-buildtool.cmd run managed-server
+```
+
+When `backend.config.json` is absent, the launcher opens a short setup wizard.
+It generates the non-secret configuration, persistent Directory identity and
+temporary internal backend token automatically. The Directory assigns the
+server ID, and the managed supervisor passes it to SkyMP without requiring a
+duplicated `backend.serverId` in `server-settings.json`.
+
+Hosting panels can run the same setup without a terminal using
+`SKYMP_SERVER_NAME`, `SKYMP_PUBLIC_BACKEND_URL`,
+`SKYMP_GAME_ADDRESS`, `SKYMP_SERVER_REGION` and
+`SKYMP_SERVER_VISIBILITY`. Public Directory registration requires a reachable
+HTTPS URL whose reverse proxy forwards
+`/.well-known/skymp-directory/verify` to the backend public API.
+If `SKYMP_BACKEND_TOKEN` is absent, the backend generates a temporary internal
+token for the current session and passes it to SkyMP without writing it to
+disk or logs. `launch_server.bat` and `skymp-buildtool.cmd run server` remain direct/debug
+entry points. The legacy `node scripts/package-managed-server.mjs` command
+continues to work. Full setup and security notes are in
+`skymp-backend/README.md`.
 
 You obviously need to have 64-bit Windows version since the server is 64-bit program.
 

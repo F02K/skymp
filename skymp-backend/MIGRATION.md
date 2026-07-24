@@ -1,21 +1,16 @@
-# Managed backend cutover
+# Coordinated Directory cutover
 
-SkyMP uses the managed backend as its operator-owned integration layer.
-Discovery and Discord OAuth belong to the mandatory SkyMP Directory. A launcher
-requests a server-bound play grant from the Directory and exchanges it at the
-selected backend. The backend then exposes the verified profile to SkyMP through
-its authenticated loopback listener.
+This release has one contract. Old launchers, pairing/HMAC managed servers and
+public operator backends are intentionally incompatible.
 
-The cutover is intentionally strict:
+1. Deploy the new self-hostable SkyMP-Directory.
+2. Publish the matching Frostfall Launcher.
+3. Re-run `skymp-buildtool setup managed-server` and restart each server.
 
-1. Directory descriptors must declare `contract: "directory-managed"`.
-2. Public and internal HTTP endpoints live only below `/api`.
-3. Launcher sessions use `Authorization: Bearer`.
-4. SkyMP identifies a backend by public server ID and sends the internal token
-   in the same header.
-5. Optional capabilities are advertised only after their module has started and
-   registered the standard handler.
+The setup updater removes `publicApi`, `publicBackendUrl` and `gameAddress`,
+preserves unrelated configuration keys, creates a timestamped backup and writes
+the replacement atomically. The Ed25519 server identity and assigned server ID
+remain in the backend database.
 
-Frostfall-Backend is deprecated and frozen. New integrations belong in
-version-pinned managed-backend modules. Gameplay behavior remains in gamemode
-plugins.
+Directory migration retains Ed25519 identities/server IDs and marks existing
+rows offline until their first heartbeat using the final descriptor.

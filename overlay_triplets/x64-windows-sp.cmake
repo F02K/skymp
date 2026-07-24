@@ -1,5 +1,10 @@
 set(VCPKG_TARGET_ARCHITECTURE x64)
 
+# The root project is intentionally generated with Visual Studio 2022. Without
+# an explicit toolset, vcpkg selects the newest installed Visual Studio and can
+# produce static libraries with VS 2026 that the v143 linker cannot consume.
+set(VCPKG_PLATFORM_TOOLSET v143)
+
 set(VCPKG_CRT_LINKAGE static)
 set(VCPKG_LIBRARY_LINKAGE static)
 

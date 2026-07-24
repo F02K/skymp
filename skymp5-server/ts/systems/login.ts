@@ -44,10 +44,15 @@ export class Login implements System {
 
   private async getUserProfile(session: string, userId: number, ctx: SystemContext): Promise<UserProfile> {
     const response = await this.fetchRetry(
-      `${this.backendUrl}/api/internal/servers/${encodeURIComponent(this.serverId)}/sessions/${encodeURIComponent(session)}`,
+      `${this.backendUrl}/api/internal/servers/${encodeURIComponent(this.serverId)}/sessions/validate`,
       {
         ...this.getFetchOptions('getUserProfile'),
-        headers: { Authorization: `Bearer ${this.backendToken}` },
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.backendToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ticket: session }),
       },
     );
 
@@ -123,7 +128,7 @@ export class Login implements System {
       })()
         .catch((err) => {
           loginErrorsCounter.inc({ reason: err?.message || "unknown" });
-          console.error("Error logging in client:", JSON.stringify(gameData), err)
+          console.error("Error logging in client:", err)
         });
     } else if (this.offlineMode === true && gameData && typeof gameData.profileId === "number") {
       const profileId = gameData.profileId;

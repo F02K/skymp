@@ -319,7 +319,7 @@ export class AuthService extends ClientListener {
         !parsed ||
         typeof parsed.session !== "string" ||
         !parsed.session ||
-        !Number.isInteger(parsed.profileId)
+        (parsed.profileId !== undefined && !Number.isInteger(parsed.profileId))
       ) {
         logError(this, "Launcher auth data is malformed");
         return null;

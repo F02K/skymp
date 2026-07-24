@@ -1,6 +1,6 @@
 import type { Logger } from './types.js';
 
-const secretKey = /token|secret|credential|password|masterkey|authorization/i;
+const secretKey = /token|secret|credential|password|masterkey|privatekey|authorization/i;
 
 function sanitize(value: unknown, key = ''): unknown {
   if (secretKey.test(key)) return '[REDACTED]';

@@ -37,6 +37,15 @@ npx skymp-gamemode watch
 npx skymp-gamemode check
 ```
 
+From a SkyMP source checkout on Windows, the buildtool first ensures that the
+compiler itself is current and then runs the same operations:
+
+```text
+skymp-buildtool.cmd gamemode build --config path\to\gamemode.config.json
+skymp-buildtool.cmd gamemode check --config path\to\gamemode.config.json
+skymp-buildtool.cmd gamemode watch --config path\to\gamemode.config.json
+```
+
 `build` emits a minified bundle without a source map. `watch` uses an
 incremental esbuild context, emits an unminified bundle with an inline source
 map, and recreates the context when the configuration changes. Failed builds

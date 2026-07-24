@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "defaultProfile": "developer",
+  "profiles": {
+    "developer": {
+      "description": "Debug build for day-to-day development",
+      "configuration": "Debug",
+      "targets": [],
+      "cmakeOptions": {
+        "BUILD_UNIT_TESTS": "ON",
+        "BUILD_CLIENT": "ON",
+        "BUILD_FRONT": "OFF",
+        "BUILD_SKYRIM_PLATFORM": "ON",
+        "BUILD_SCRIPTS": "ON",
+        "BUILD_GAMEMODE": "OFF",
+        "BUILD_GAMEMODE_COMPILER": "ON",
+        "BUILD_MANAGED_BACKEND": "ON",
+        "PREPARE_NEXUS_ARCHIVES": "OFF",
+        "INSTALL_CLIENT_DIST": "OFF"
+      }
+    },
+    "release": {
+      "description": "Release build with compiler and packaged managed backend",
+      "configuration": "Release",
+      "targets": [],
+      "cmakeOptions": {
+        "BUILD_UNIT_TESTS": "ON",
+        "BUILD_CLIENT": "ON",
+        "BUILD_FRONT": "OFF",
+        "BUILD_SKYRIM_PLATFORM": "ON",
+        "BUILD_SCRIPTS": "ON",
+        "BUILD_GAMEMODE": "OFF",
+        "BUILD_GAMEMODE_COMPILER": "ON",
+        "BUILD_MANAGED_BACKEND": "ON",
+        "PREPARE_NEXUS_ARCHIVES": "OFF",
+        "INSTALL_CLIENT_DIST": "OFF"
+      }
+    },
+    "server-release": {
+      "description": "Release server with gamemode compiler and managed backend",
+      "configuration": "Release",
+      "targets": [
+        "skymp5-functions-lib",
+        "skymp5-gamemode-compiler",
+        "skymp-managed-server"
+      ],
+      "cmakeOptions": {
+        "BUILD_UNIT_TESTS": "OFF",
+        "BUILD_CLIENT": "OFF",
+        "BUILD_FRONT": "OFF",
+        "BUILD_SKYRIM_PLATFORM": "OFF",
+        "BUILD_SCRIPTS": "OFF",
+        "BUILD_GAMEMODE": "OFF",
+        "BUILD_GAMEMODE_COMPILER": "ON",
+        "BUILD_MANAGED_BACKEND": "ON",
+        "PREPARE_NEXUS_ARCHIVES": "OFF",
+        "INSTALL_CLIENT_DIST": "OFF"
+      }
+    },
+    "client-release": {
+      "description": "Release client, Skyrim Platform and scripts",
+      "configuration": "Release",
+      "targets": [
+        "skymp5-client",
+        "skyrim-platform",
+        "skymp5-scripts"
+      ],
+      "cmakeOptions": {
+        "BUILD_UNIT_TESTS": "OFF",
+        "BUILD_CLIENT": "ON",
+        "BUILD_FRONT": "OFF",
+        "BUILD_SKYRIM_PLATFORM": "ON",
+        "BUILD_SCRIPTS": "ON",
+        "BUILD_GAMEMODE": "OFF",
+        "BUILD_GAMEMODE_COMPILER": "OFF",
+        "BUILD_MANAGED_BACKEND": "OFF",
+        "PREPARE_NEXUS_ARCHIVES": "OFF",
+        "INSTALL_CLIENT_DIST": "OFF"
+      }
+    },
+    "custom": {
+      "description": "Locally configured CMake options and targets",
+      "configuration": "Debug",
+      "targets": [],
+      "cmakeOptions": {
+        "BUILD_UNIT_TESTS": "ON",
+        "BUILD_CLIENT": "ON",
+        "BUILD_FRONT": "OFF",
+        "BUILD_SKYRIM_PLATFORM": "ON",
+        "BUILD_SCRIPTS": "ON",
+        "BUILD_GAMEMODE": "OFF",
+        "BUILD_GAMEMODE_COMPILER": "ON",
+        "BUILD_MANAGED_BACKEND": "ON",
+        "PREPARE_NEXUS_ARCHIVES": "OFF",
+        "INSTALL_CLIENT_DIST": "OFF"
+      }
+    }
+  }
+}
