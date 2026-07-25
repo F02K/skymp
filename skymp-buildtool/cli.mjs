@@ -20,6 +20,7 @@ import {
   testAction,
 } from "./src/actions.mjs";
 import { startTui } from "./src/tui.mjs";
+import { createModCollectionLock } from "./src/modcollection.mjs";
 
 export const usage = `SkyMP Buildtool
 
@@ -36,6 +37,7 @@ Usage:
   skymp-buildtool.cmd gamemode <build|check|watch> --config <path>
   skymp-buildtool.cmd run <server|managed-server> [--setup] [managed server options]
   skymp-buildtool.cmd setup managed-server [managed server options]
+  skymp-buildtool.cmd modcollection --collection-export <vortex-export.json> --staging-directory <Vortex staging> --data-directory <Data> [--server-plugins <comma-separated>] --output <lock.json>
   skymp-buildtool.cmd clean --scope <build|node|vcpkg|all> --yes
 
 Global build options:
@@ -55,8 +57,7 @@ Managed server setup options:
   --server-hostname <optional-hostname>
   --gamemode <name>
   --data-directory <path>
-  --nexus-collection <slug>
-  --collection-revision <number>
+  --modcollection-lock <path>
   --server-region <region>
   --server-visibility <public|private>
   --server-max-players <number>
@@ -140,6 +141,29 @@ export async function main(argv = process.argv.slice(2)) {
         environment: parsed.options.managedEnvironment,
       });
       return 0;
+    case "modcollection": {
+      if (
+        !parsed.options.collectionExport ||
+        !parsed.options.stagingDirectory ||
+        !parsed.options.managedEnvironment.SKYMP_DATA_DIRECTORY ||
+        !parsed.options.output
+      ) {
+        throw new Error(
+          "modcollection requires --collection-export, --staging-directory, --data-directory and --output",
+        );
+      }
+      const result = await createModCollectionLock({
+        collectionExport: parsed.options.collectionExport,
+        stagingDirectory: parsed.options.stagingDirectory,
+        dataDirectory: parsed.options.managedEnvironment.SKYMP_DATA_DIRECTORY,
+        outputFile: parsed.options.output,
+        selectedPlugins: parsed.options.serverPlugins,
+      });
+      process.stdout.write(
+        `Created ${result.outputFile} (${result.lock.client.manifest.mods.length} client mods, ${result.lock.server.plugins.length} server plugins)\n`,
+      );
+      return 0;
+    }
     case "clean": {
       const scope = parsed.options.scope;
       if (!scope) throw new Error("clean requires --scope");

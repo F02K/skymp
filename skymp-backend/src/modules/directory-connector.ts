@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { basename } from 'node:path';
 import type { BackendConfig, BackendModule, ModuleContext } from '../types.js';
 import { ClientPackService } from '../client-pack.js';
 import {
@@ -9,6 +8,7 @@ import {
   type StoredDirectoryIdentity,
   validateStoredDirectoryIdentity,
 } from '../directory-protocol.js';
+import { modpackSummary } from '../modcollection.js';
 
 interface DirectoryConfig {
   url?: string;
@@ -137,6 +137,9 @@ export class DirectoryConnector implements BackendModule {
       schemaVersion: 1,
       publicKey: identity.publicKey,
       descriptor,
+      ...(this.backend.server.modCollection
+        ? { modpackManifest: this.backend.server.modCollection.client.manifest }
+        : {}),
       ...(this.backend.server.id || identity.serverId
         ? { requestedServerId: this.backend.server.id || identity.serverId }
         : {}),
@@ -261,14 +264,8 @@ export class DirectoryConnector implements BackendModule {
       versions: this.backend.server.versions ?? {},
       maxPlayers,
       access: this.backend.server.access ?? { discordGuild: { required: false } },
-      modpack: this.backend.server.modpack
-        ? {
-          nexusCollection: this.backend.server.modpack.nexusCollection,
-          revision: this.backend.server.modpack.revision,
-          plugins: this.backend.server.plugins,
-          loadOrder: this.backend.server.loadOrder.map((entry) => basename(entry)),
-          hashes: this.backend.server.modpack.hashes ?? {},
-        }
+      modpack: this.backend.server.modCollection
+        ? modpackSummary(this.backend.server.modCollection)
         : undefined,
       ...(this.clientPack?.descriptor()
         ? { clientPack: this.clientPack.descriptor() }

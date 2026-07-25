@@ -16,6 +16,7 @@ skymp-buildtool.cmd test --suite unit --filter Respawn
 skymp-buildtool.cmd test --suite server
 skymp-buildtool.cmd package managed-server
 skymp-buildtool.cmd package client-pack path\to\staging build\packs\my-server.zip
+skymp-buildtool.cmd modcollection --collection-export collection.json --staging-directory "D:\Vortex Mods\skyrimse" --data-directory server\Data --output skymp-modcollection.lock.json
 skymp-buildtool.cmd setup managed-server
 skymp-buildtool.cmd run managed-server
 skymp-buildtool.cmd run managed-server --setup
@@ -24,6 +25,12 @@ skymp-buildtool.cmd setup managed-server --server-name "My Server" --client-pack
 ```
 
 Use `skymp-buildtool.cmd --help` for the complete command list.
+
+`modcollection` consumes the local, archive-free export produced by the bundled
+SkyMP Vortex extension. It re-hashes the final FOMOD staging trees, parses TES4
+master records in the Dedicated Server `Data` directory and creates the one
+deterministic schema-1 lock used by the backend and Directory. Nexus tokens,
+archives and absolute workstation paths are never written to that lock.
 
 ## Profiles and local configuration
 

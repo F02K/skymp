@@ -12,8 +12,8 @@ skymp-buildtool.cmd setup managed-server
 ```
 
 The wizard asks only for ordinary server data, game/resources ports, gamemode,
-Data directory, plugin load order, optional pinned Nexus Collection and an
-optional Directory URL. The default is `https://skyservers.online`. A persistent
+Data directory, optional `skymp-modcollection.lock.json` and an optional
+Directory URL. The default is `https://skyservers.online`. A persistent
 Ed25519 identity and the Directory signing-key pin are stored in the local
 backend database; there are no pairing codes, HMAC credentials, public backend
 URLs or operator exchange endpoints.
@@ -22,7 +22,10 @@ URLs or operator exchange endpoints.
 directory containing `backend.config.json`. Load-order entries are resolved
 relative to `server.dataDirectory`; explicitly configured absolute plugin paths
 are also supported. Every configured directory, gamemode and plugin path is
-validated before registration or child-process startup. Local absolute paths
+validated before registration or child-process startup. A configured
+`server.modCollectionLock` is loaded before the supervisor exists; every
+locked server file is size- and SHA-256-verified and its exact plugin/load order
+replaces manual values. Local absolute paths
 are never copied implicitly from the machine that built the managed package,
 and Directory descriptors expose only plugin basenames.
 

@@ -62,7 +62,5 @@ function launcherCapabilityPaths(capability: string): string[] {
     return [`/launcher/${capability}`];
   if (capability === 'clientDistribution')
     return ['/launcher/client/manifest', '/launcher/client/download'];
-  if (capability === 'modpack')
-    return ['/launcher/modpack/manifest', '/launcher/modpack/download'];
   return [];
 }
