@@ -33,11 +33,8 @@ export interface BackendConfig {
     dataDirectory: string;
     plugins: string[];
     loadOrder: string[];
-    modpack?: {
-      nexusCollection: string;
-      revision: number;
-      hashes?: Record<string, string>;
-    };
+    modCollectionLock?: string;
+    modCollection?: ModCollectionLock;
     clientPack?: {
       archive: string;
       host: string;
@@ -67,6 +64,39 @@ export interface BackendConfig {
   modules: ModuleSelection[];
 }
 
+export interface ModCollectionRef {
+  game: 'skyrimspecialedition';
+  slug: string;
+  revision: number;
+}
+
+export interface PublicModpackManifest {
+  schemaVersion: 1;
+  collection: ModCollectionRef;
+  mods: Array<{
+    key: string;
+    name: string;
+    version: string;
+    nexus: { modId: number; fileId: number };
+    installOrder: number;
+    treeSha256: string;
+    plugins: string[];
+  }>;
+  plugins: Array<{ name: string; sha256: string; masters: string[] }>;
+  loadOrder: string[];
+}
+
+export interface ModCollectionLock {
+  schemaVersion: 1;
+  collection: ModCollectionRef;
+  server: {
+    files: Array<{ path: string; size: number; sha256: string }>;
+    plugins: Array<{ name: string; sha256: string; masters: string[] }>;
+    loadOrder: string[];
+  };
+  client: { manifestSha256: string; manifest: PublicModpackManifest };
+}
+
 export interface ModuleSelection {
   id: string;
   enabled: boolean;
@@ -82,7 +112,7 @@ export interface ModuleManifest {
   dependencies: string[];
   entryPoint: string;
   configSchema?: Record<string, unknown>;
-  capabilities?: Array<'news' | 'mods' | 'metrics' | 'clientDistribution' | 'modpack'>;
+  capabilities?: Array<'news' | 'mods' | 'metrics' | 'clientDistribution'>;
 }
 
 export interface Logger {

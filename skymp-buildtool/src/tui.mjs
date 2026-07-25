@@ -14,6 +14,7 @@ import {
   setupAction,
   testAction,
 } from "./actions.mjs";
+import { createModCollectionLock } from "./modcollection.mjs";
 
 const ESC = "\u001b";
 const colors = {
@@ -61,6 +62,7 @@ export async function startTui() {
         { id: "tests", label: "Run a test suite" },
         { id: "package", label: "Package managed server" },
         { id: "setup-managed", label: "Set up managed server" },
+        { id: "modcollection", label: "Create server ModCollection lock" },
         { id: "gamemode", label: "Build/check/watch a gamemode" },
         { id: "run-server", label: "Run direct server" },
         { id: "run-managed", label: "Run managed server" },
@@ -152,6 +154,42 @@ async function dispatchTuiAction(terminal, configuration, action) {
   if (action === "setup-managed") {
     await runInForeground(terminal, "Set up managed server", (processOptions) =>
       setupAction("managed-server", { processOptions }));
+    return;
+  }
+  if (action === "modcollection") {
+    const collectionExport = await promptLine(
+      terminal,
+      "Path to SkyMP Vortex Collection export: ",
+    );
+    const stagingDirectory = await promptLine(
+      terminal,
+      "Path to the Vortex Skyrim SE staging directory: ",
+    );
+    const dataDirectory = await promptLine(
+      terminal,
+      "Path to the Dedicated Server Data directory: ",
+    );
+    const serverPlugins = await promptLine(
+      terminal,
+      "Server plugins (comma-separated; empty selects every matching plugin): ",
+    );
+    const outputFile = await promptLine(
+      terminal,
+      "Output lock file [skymp-modcollection.lock.json]: ",
+    );
+    if (collectionExport && stagingDirectory && dataDirectory) {
+      await runWithLogView(terminal, "Create ModCollection", async () => {
+        await createModCollectionLock({
+          collectionExport,
+          stagingDirectory,
+          dataDirectory,
+          outputFile: outputFile || "skymp-modcollection.lock.json",
+          selectedPlugins: serverPlugins
+            ? serverPlugins.split(",").map((item) => item.trim()).filter(Boolean)
+            : undefined,
+        });
+      });
+    }
     return;
   }
 

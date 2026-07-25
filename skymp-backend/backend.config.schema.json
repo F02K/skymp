@@ -20,13 +20,7 @@
         "hostname": { "type": "string" }, "gamemode": { "type": "string", "minLength": 1 }, "dataDirectory": { "type": "string", "minLength": 1 },
         "plugins": { "type": "array", "items": { "type": "string" } },
         "loadOrder": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-        "modpack": {
-          "type": "object", "required": ["nexusCollection", "revision"],
-          "properties": {
-            "nexusCollection": { "type": "string" }, "revision": { "type": "integer", "minimum": 1 },
-            "hashes": { "type": "object", "additionalProperties": { "type": "string" } }
-          }
-        },
+        "modCollectionLock": { "type": "string", "minLength": 1 },
         "clientPack": {
           "type": "object",
           "additionalProperties": false,

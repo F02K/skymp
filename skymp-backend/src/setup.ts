@@ -37,7 +37,11 @@ export async function ensureBackendConfig(path: string, options: SetupOptions = 
   const dataDirectory = resolve(configDirectory, template.server.dataDirectory);
   await mkdir(dataDirectory, { recursive: true });
   const discoveredPlugins = await discoverPlugins(dataDirectory);
-  if (interactive) {
+  if (template.server.modCollectionLock) {
+    template.server.plugins = [];
+    template.server.loadOrder = [];
+    output.write('Plugin selection and load order will be read from the ModCollection lock.\n');
+  } else if (interactive) {
     await promptForPlugins(template, discoveredPlugins, input, output);
   } else {
     template.server.plugins = discoveredPlugins;
@@ -104,16 +108,8 @@ export function applyBackendEnvironment(
     if (!Number.isInteger(value) || value < 1) throw new Error('SKYMP_SERVER_MAX_PLAYERS must be a positive integer');
     config.server.maxPlayers = value;
   }
-  if (environment.SKYMP_NEXUS_COLLECTION) {
-    const revision = Number(environment.SKYMP_NEXUS_COLLECTION_REVISION);
-    if (!Number.isInteger(revision) || revision < 1) {
-      throw new Error('SKYMP_NEXUS_COLLECTION_REVISION must be a positive integer');
-    }
-    config.server.modpack = {
-      ...config.server.modpack,
-      nexusCollection: environment.SKYMP_NEXUS_COLLECTION,
-      revision,
-    };
+  if (environment.SKYMP_MODCOLLECTION_LOCK) {
+    config.server.modCollectionLock = environment.SKYMP_MODCOLLECTION_LOCK;
   }
   if (environment.SKYMP_DIRECTORY_URL) {
     const connector = config.modules.find((module) => module.id === 'directory-connector');
@@ -250,13 +246,14 @@ async function promptForServer(
     else delete config.server.hostname;
     config.server.gamemode = await answer(prompt, 'Gamemode', config.server.gamemode);
     config.server.dataDirectory = await answer(prompt, 'Dedicated Data directory', config.server.dataDirectory);
-    const collection = await answer(prompt, 'Nexus Collection slug (empty for none)', config.server.modpack?.nexusCollection ?? '', true);
-    if (collection) {
-      const revision = parsePositive(await answer(prompt, 'Pinned Collection revision', String(config.server.modpack?.revision ?? 1)), 'Collection revision');
-      config.server.modpack = { ...config.server.modpack, nexusCollection: collection, revision };
-    } else {
-      delete config.server.modpack;
-    }
+    const collectionLock = await answer(
+      prompt,
+      'ModCollection lock file (empty for none)',
+      config.server.modCollectionLock ?? '',
+      true,
+    );
+    if (collectionLock) config.server.modCollectionLock = collectionLock;
+    else delete config.server.modCollectionLock;
     const connector = config.modules.find((module) => module.id === 'directory-connector');
     if (connector) {
       const current = String(connector.config?.url ?? 'https://skyservers.online');
@@ -374,6 +371,7 @@ function migrateRemovedSettings(config: BackendConfig & Record<string, unknown>)
   const server = config.server as BackendConfig['server'] & Record<string, unknown>;
   delete server.publicBackendUrl;
   delete server.gameAddress;
+  delete server.modpack;
   if (!server.gamePort) server.gamePort = 7777;
   if (!server.resourcesPort) server.resourcesPort = 7778;
   if (!server.gamemode || server.gamemode === 'default') server.gamemode = './gamemode.js';

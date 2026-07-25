@@ -18,12 +18,15 @@ const VALUE_OPTIONS = new Set([
   "--server-hostname",
   "--gamemode",
   "--data-directory",
-  "--nexus-collection",
-  "--collection-revision",
+  "--modcollection-lock",
   "--server-region",
   "--server-visibility",
   "--server-max-players",
   "--directory-url",
+  "--collection-export",
+  "--staging-directory",
+  "--server-plugins",
+  "--output",
 ]);
 
 const BOOLEAN_OPTIONS = new Set(["--test", "--yes", "--setup", "--help", "-h"]);
@@ -66,12 +69,15 @@ export function parseArguments(argv) {
         case "--server-hostname": options.managedEnvironment.SKYMP_SERVER_HOSTNAME = value; break;
         case "--gamemode": options.managedEnvironment.SKYMP_GAMEMODE = value; break;
         case "--data-directory": options.managedEnvironment.SKYMP_DATA_DIRECTORY = value; break;
-        case "--nexus-collection": options.managedEnvironment.SKYMP_NEXUS_COLLECTION = value; break;
-        case "--collection-revision": options.managedEnvironment.SKYMP_NEXUS_COLLECTION_REVISION = String(parsePositiveInteger(value, argument)); break;
+        case "--modcollection-lock": options.managedEnvironment.SKYMP_MODCOLLECTION_LOCK = value; break;
         case "--server-region": options.managedEnvironment.SKYMP_SERVER_REGION = value; break;
         case "--server-visibility": options.managedEnvironment.SKYMP_SERVER_VISIBILITY = value; break;
         case "--server-max-players": options.managedEnvironment.SKYMP_SERVER_MAX_PLAYERS = String(parsePositiveInteger(value, argument)); break;
         case "--directory-url": options.managedEnvironment.SKYMP_DIRECTORY_URL = value; break;
+        case "--collection-export": options.collectionExport = value; break;
+        case "--staging-directory": options.stagingDirectory = value; break;
+        case "--server-plugins": options.serverPlugins = value.split(",").map((item) => item.trim()).filter(Boolean); break;
+        case "--output": options.output = value; break;
         case "--set": {
           const equals = value.indexOf("=");
           if (equals < 1) {

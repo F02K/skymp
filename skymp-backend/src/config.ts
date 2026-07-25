@@ -3,6 +3,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { BackendConfig } from './types.js';
 import { applyBackendEnvironment } from './setup.js';
+import { loadModCollectionLock } from './modcollection.js';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`Invalid backend config: ${message}`);
@@ -22,6 +23,15 @@ export function loadConfig(path = 'backend.config.json'): BackendConfig {
   if (config.server.gamemode === 'default') config.server.gamemode = './gamemode.js';
   config.server.gamemode = resolve(root, config.server.gamemode);
   config.server.dataDirectory = resolve(root, config.server.dataDirectory);
+  if (config.server.modCollectionLock) {
+    config.server.modCollectionLock = resolve(root, config.server.modCollectionLock);
+    config.server.modCollection = loadModCollectionLock(
+      config.server.modCollectionLock,
+      config.server.dataDirectory,
+    );
+    config.server.plugins = config.server.modCollection.server.plugins.map((item) => item.name);
+    config.server.loadOrder = [...config.server.modCollection.server.loadOrder];
+  }
   if (config.server.clientPack) {
     config.server.clientPack.archive = resolve(root, config.server.clientPack.archive);
   }
@@ -67,9 +77,9 @@ export function validateConfig(config: BackendConfig): void {
   assert(Boolean(config.server.dataDirectory), 'server.dataDirectory is required');
   assert(Array.isArray(config.server.plugins), 'server.plugins must be an array');
   assert(Array.isArray(config.server.loadOrder), 'server.loadOrder must be an array');
-  if (config.server.modpack) {
-    assert(Boolean(config.server.modpack.nexusCollection), 'server.modpack.nexusCollection is required');
-    positiveInteger(config.server.modpack.revision, 'server.modpack.revision');
+  assert(!('modpack' in config.server), 'server.modpack is unsupported; use server.modCollectionLock');
+  if (config.server.modCollectionLock) {
+    assert(typeof config.server.modCollectionLock === 'string', 'server.modCollectionLock must be a path');
   }
   if (config.server.clientPack) {
     assert(Boolean(config.server.clientPack.archive), 'server.clientPack.archive is required');
